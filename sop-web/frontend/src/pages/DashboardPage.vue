@@ -1,30 +1,33 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { httpsCallable } from 'firebase/functions';
-import { Plus, Inbox } from 'lucide-vue-next';
-import { functions } from '@/firebase/config';
+import { onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { Plus, Inbox, FileText } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
+import { useSopStore } from '@/stores/sop';
+import LoadingSpinner from '@/components/LoadingSpinner.vue';
 
 const authStore = useAuthStore();
-const helloMessage = ref<string | null>(null);
-const helloError = ref<string | null>(null);
+const sopStore = useSopStore();
+const router = useRouter();
 
-// W1 用 helloWorld 證明前端→Cloud Functions 管線打通
-onMounted(async () => {
-  try {
-    const helloWorld = httpsCallable<unknown, { message: string; uid: string | null }>(
-      functions,
-      'helloWorld',
-    );
-    const res = await helloWorld({});
-    helloMessage.value = `${res.data.message} (uid=${res.data.uid ?? 'anonymous'})`;
-    // 在 console 也留一筆，方便驗證
-    console.info('[helloWorld]', res.data);
-  } catch (err) {
-    helloError.value = err instanceof Error ? err.message : String(err);
-    console.error('[helloWorld] failed', err);
+onMounted(() => {
+  if (authStore.authUser) {
+    sopStore.bind(authStore.authUser.uid);
   }
 });
+onUnmounted(() => sopStore.unbind());
+
+function goNewSop(): void {
+  void router.push({ name: 'new-sop' });
+}
+
+function fmtUpdated(ts: { toDate?: () => Date } | null | undefined): string {
+  if (!ts || typeof ts.toDate !== 'function') return '—';
+  const d = ts.toDate();
+  // 顯示為 GMT+8（規格要求）
+  const local = new Date(d.getTime() + 8 * 3600 * 1000);
+  return local.toISOString().slice(0, 10);
+}
 </script>
 
 <template>
@@ -32,37 +35,66 @@ onMounted(async () => {
     <header class="flex items-center justify-between mb-8">
       <div>
         <h1 class="text-2xl font-semibold text-primary-700">我的 SOP</h1>
-        <p class="text-sm text-gray-600 mt-1">共 0 份</p>
+        <p class="text-sm text-gray-600 mt-1">共 {{ sopStore.count }} 份</p>
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary-700 text-white font-medium hover:bg-primary-800 transition-colors disabled:opacity-50"
-        disabled
-        title="W3 階段開放"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary-700 text-white font-medium hover:bg-primary-800 transition-colors"
+        @click="goNewSop"
       >
         <Plus class="w-4 h-4" />
         新增 SOP
       </button>
     </header>
 
-    <section class="bg-white rounded-lg border border-gray-200 p-12 text-center">
+    <section v-if="sopStore.loading">
+      <LoadingSpinner label="正在載入 SOP 清單…" />
+    </section>
+
+    <section
+      v-else-if="sopStore.sops.length === 0"
+      class="bg-white rounded-lg border border-gray-200 p-12 text-center"
+    >
       <Inbox class="w-12 h-12 text-gray-300 mx-auto mb-4" />
       <h2 class="text-lg font-medium text-primary-700 mb-2">您還沒有 SOP</h2>
       <p class="text-sm text-gray-600 mb-6">
-        W1 階段尚未實作上傳功能；W3 完成後即可在此建立第一份 SOP。
+        上傳訪談逐字稿即可產出第一份 SOP。
       </p>
-      <p class="text-xs text-gray-400">
-        登入帳號：{{ authStore.userDoc?.email ?? authStore.authUser?.email ?? '—' }}
-      </p>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary-700 text-white text-sm font-medium hover:bg-primary-800 transition-colors"
+        @click="goNewSop"
+      >
+        <Plus class="w-4 h-4" />
+        建立第一份
+      </button>
     </section>
 
-    <!-- W1 驗收用：顯示 Cloud Function 連線狀態 -->
-    <section class="mt-8 text-xs text-gray-500">
-      <p v-if="helloMessage">✅ Cloud Function 連線：{{ helloMessage }}</p>
-      <p v-else-if="helloError" class="text-warning">
-        ⚠️ Cloud Function 連線失敗：{{ helloError }}
-      </p>
-      <p v-else>… 正在測試 Cloud Function 連線</p>
+    <section v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <RouterLink
+        v-for="sop in sopStore.sops"
+        :key="sop.id"
+        :to="{ name: 'sop-detail', params: { id: sop.id } }"
+        class="bg-white rounded-lg border border-gray-200 p-5 hover:border-primary-400 hover:shadow-sm transition"
+      >
+        <div class="flex items-center gap-2 text-xs text-gray-500 mb-3">
+          <FileText class="w-3 h-3" />
+          <span>v{{ sop.currentVersion }}</span>
+          <span>·</span>
+          <span>{{ fmtUpdated(sop.updatedAt) }}</span>
+        </div>
+        <h3 class="font-semibold text-primary-700 mb-2 line-clamp-2">
+          {{ sop.title }}
+        </h3>
+        <p class="text-xs text-gray-500 mb-3">{{ sop.targetAudience }}</p>
+        <div class="flex items-center gap-3 text-xs text-gray-500">
+          <span>{{ sop.stepsCount }} 步驟</span>
+          <span v-if="sop.troubleshootingCount > 0">
+            {{ sop.troubleshootingCount }} 排除
+          </span>
+          <span v-if="sop.glossaryCount > 0">{{ sop.glossaryCount }} 術語</span>
+        </div>
+      </RouterLink>
     </section>
   </div>
 </template>

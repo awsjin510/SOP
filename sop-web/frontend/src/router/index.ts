@@ -25,6 +25,24 @@ const routes: RouteRecordRaw[] = [
     meta: { layout: 'main', requiresAuth: true },
   },
   {
+    path: '/sop/new',
+    name: 'new-sop',
+    component: () => import('@/pages/NewSopPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
+    path: '/sop/:id',
+    name: 'sop-detail',
+    component: () => import('@/pages/SopDetailPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
+    path: '/job/:jobId',
+    name: 'job-progress',
+    component: () => import('@/pages/JobProgressPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/pages/SettingsPage.vue'),
