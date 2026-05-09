@@ -327,9 +327,139 @@ export interface ChangeRecord {
   toVersion: string;
   changeIntents: ChangeIntent[];
   skippedIntents?: Array<{ intent: ChangeIntent; reason: string }>;
+  /** W8 寫入：審核時的衝突 / 完整性問題 / 術語對映 */
+  conflicts?: unknown[];
+  completenessIssues?: unknown[];
+  termMappings?: Array<{ vendorTerm: string; internalTerm: string }>;
   changelogDocxUrl?: string;
   createdAt: Timestamp | null;
   appliedBy: string;
+}
+
+// W9：版本列表 / 取單一版本 / 取單一 change
+export interface VersionSummary {
+  id: string;
+  version: string;
+  fromVersion?: string;
+  changeId?: string;
+  changeSummary?: string;
+  documentDocxUrl?: string;
+  documentPdfUrl?: string;
+  createdAt: Timestamp | null;
+  createdBy?: string;
+  qualityIssues?: number;
+  needsRetraining?: boolean;
+  /** stepsCount/troubleCount 給時間軸顯示用 */
+  stepsCount?: number;
+  troubleshootingCount?: number;
+  glossaryCount?: number;
+}
+
+export interface VersionDoc extends VersionSummary {
+  ir: IR;
+  documentMarkdown: string;
+  imageAssets: Record<string, ImageAsset>;
+  sourceMaterialsUrls: string[];
+}
+
+export async function listVersions(sopId: string): Promise<VersionSummary[]> {
+  const q = query(
+    collection(db, `${SOPS}/${sopId}/versions`),
+    orderBy('createdAt', 'desc'),
+  );
+  const { getDocs } = await import('firebase/firestore');
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const data = d.data() as Record<string, unknown>;
+    const ir = data['ir'] as IR | undefined;
+    return {
+      id: d.id,
+      version: (data['version'] as string) ?? d.id.replace(/^v/, ''),
+      ...(typeof data['fromVersion'] === 'string'
+        ? { fromVersion: data['fromVersion'] as string }
+        : {}),
+      ...(typeof data['changeId'] === 'string'
+        ? { changeId: data['changeId'] as string }
+        : {}),
+      ...(typeof data['changeSummary'] === 'string'
+        ? { changeSummary: data['changeSummary'] as string }
+        : {}),
+      ...(typeof data['documentDocxUrl'] === 'string'
+        ? { documentDocxUrl: data['documentDocxUrl'] as string }
+        : {}),
+      ...(typeof data['documentPdfUrl'] === 'string'
+        ? { documentPdfUrl: data['documentPdfUrl'] as string }
+        : {}),
+      createdAt: (data['createdAt'] as Timestamp) ?? null,
+      ...(typeof data['createdBy'] === 'string'
+        ? { createdBy: data['createdBy'] as string }
+        : {}),
+      ...(typeof data['qualityIssues'] === 'number'
+        ? { qualityIssues: data['qualityIssues'] as number }
+        : {}),
+      ...(typeof data['needsRetraining'] === 'boolean'
+        ? { needsRetraining: data['needsRetraining'] as boolean }
+        : {}),
+      ...(ir
+        ? {
+            stepsCount: ir.steps.length,
+            troubleshootingCount: ir.troubleshooting?.length ?? 0,
+            glossaryCount: ir.glossary?.length ?? 0,
+          }
+        : {}),
+    };
+  });
+}
+
+export async function getVersion(
+  sopId: string,
+  versionId: string,
+): Promise<VersionDoc | null> {
+  const snap = await getDoc(doc(db, `${SOPS}/${sopId}/versions/${versionId}`));
+  if (!snap.exists()) return null;
+  const data = snap.data() as Record<string, unknown>;
+  const ir = data['ir'] as IR;
+  return {
+    id: versionId,
+    version: (data['version'] as string) ?? versionId.replace(/^v/, ''),
+    ir,
+    documentMarkdown: (data['documentMarkdown'] as string) ?? '',
+    documentDocxUrl: (data['documentDocxUrl'] as string) ?? '',
+    documentPdfUrl: (data['documentPdfUrl'] as string) ?? '',
+    sourceMaterialsUrls: (data['sourceMaterialsUrls'] as string[]) ?? [],
+    imageAssets: (data['imageAssets'] as Record<string, ImageAsset>) ?? {},
+    ...(typeof data['fromVersion'] === 'string'
+      ? { fromVersion: data['fromVersion'] as string }
+      : {}),
+    ...(typeof data['changeId'] === 'string'
+      ? { changeId: data['changeId'] as string }
+      : {}),
+    ...(typeof data['changeSummary'] === 'string'
+      ? { changeSummary: data['changeSummary'] as string }
+      : {}),
+    createdAt: (data['createdAt'] as Timestamp) ?? null,
+    ...(typeof data['createdBy'] === 'string'
+      ? { createdBy: data['createdBy'] as string }
+      : {}),
+    ...(typeof data['qualityIssues'] === 'number'
+      ? { qualityIssues: data['qualityIssues'] as number }
+      : {}),
+    ...(typeof data['needsRetraining'] === 'boolean'
+      ? { needsRetraining: data['needsRetraining'] as boolean }
+      : {}),
+    stepsCount: ir.steps.length,
+    troubleshootingCount: ir.troubleshooting?.length ?? 0,
+    glossaryCount: ir.glossary?.length ?? 0,
+  };
+}
+
+export async function getChange(
+  sopId: string,
+  changeId: string,
+): Promise<ChangeRecord | null> {
+  const snap = await getDoc(doc(db, `${SOPS}/${sopId}/changes/${changeId}`));
+  if (!snap.exists()) return null;
+  return snap.data() as ChangeRecord;
 }
 
 export function subscribeChanges(

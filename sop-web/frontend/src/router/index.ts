@@ -43,6 +43,24 @@ const routes: RouteRecordRaw[] = [
     meta: { layout: 'main', requiresAuth: true },
   },
   {
+    path: '/sop/:id/versions',
+    name: 'sop-versions',
+    component: () => import('@/pages/VersionHistoryPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
+    path: '/sop/:id/diff',
+    name: 'version-diff',
+    component: () => import('@/pages/VersionDiffPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
+    path: '/sop/:id/changes/:changeId',
+    name: 'change-detail',
+    component: () => import('@/pages/ChangeDetailPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
     path: '/job/:jobId',
     name: 'job-progress',
     component: () => import('@/pages/JobProgressPage.vue'),
