@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  increment,
   onSnapshot,
   orderBy,
   query,
@@ -12,8 +13,9 @@ import {
   Timestamp,
   getDoc,
 } from 'firebase/firestore';
+import { nanoid } from 'nanoid';
 import { db } from '@/firebase/config';
-import type { IR } from '@/core/ir/schemas';
+import type { ChangeIntent, IR } from '@/core/ir/schemas';
 import type { ImageAsset, SopDoc } from '@/types/firestore';
 
 const SOPS = 'sops';
@@ -192,6 +194,142 @@ export function slugify(input: string): string {
  */
 export function generateFallbackSopId(nanoIdFn: () => string): string {
   return `sop-${nanoIdFn()}`;
+}
+
+// ============================================================
+// W6: 新版本 + 變更紀錄寫入
+// ============================================================
+
+export interface AddVersionInput {
+  sopId: string;
+  owner: string;
+  ir: IR;
+  fromVersion: string;
+  changeId: string;
+  changeSummary?: string;
+  documentMarkdown?: string;
+  documentDocxUrl?: string;
+  documentPdfUrl?: string;
+  sourceMaterialsUrls: string[];
+  imageAssets?: Record<string, ImageAsset>;
+  needsRetraining?: boolean;
+}
+
+export interface AddChangeInput {
+  sopId: string;
+  changeId: string;
+  fromVersion: string;
+  toVersion: string;
+  appliedBy: string;
+  changeIntents: ChangeIntent[];
+  /** 跳過 / 拒絕的 intents（給 changelog 顯示用） */
+  skippedIntents?: Array<{ intent: ChangeIntent; reason: string }>;
+  changelogDocxUrl?: string;
+}
+
+/**
+ * 寫入新版本並更新 sop 主文件的版本 / 統計欄位。用 batch 確保 atomicity。
+ * 注意：versions 子集合不可 update（rules），所以一次性 set 完整內容。
+ */
+export async function addVersion(input: AddVersionInput): Promise<{ versionId: string }> {
+  const versionId = `v${input.ir.version}`;
+  const batch = writeBatch(db);
+
+  const sopRef = doc(db, SOPS, input.sopId);
+  const versionRef = doc(db, `${SOPS}/${input.sopId}/versions/${versionId}`);
+
+  batch.update(sopRef, {
+    title: input.ir.meta.title,
+    ...(input.ir.meta.category ? { category: input.ir.meta.category } : {}),
+    tags: input.ir.meta.tags ?? [],
+    targetAudience: input.ir.meta.target_audience,
+    estimatedDuration: input.ir.meta.estimated_duration_minutes
+      ? `${input.ir.meta.estimated_duration_minutes} 分鐘`
+      : '—',
+    ...(input.ir.meta.difficulty ? { difficulty: input.ir.meta.difficulty } : {}),
+    currentVersion: input.ir.version,
+    totalVersions: increment(1),
+    stepsCount: input.ir.steps.length,
+    troubleshootingCount: input.ir.troubleshooting?.length ?? 0,
+    glossaryCount: input.ir.glossary?.length ?? 0,
+    updatedAt: serverTimestamp(),
+  });
+
+  batch.set(versionRef, {
+    id: versionId,
+    version: input.ir.version,
+    ir: input.ir,
+    fromVersion: input.fromVersion,
+    changeId: input.changeId,
+    documentMarkdown: input.documentMarkdown ?? '',
+    documentDocxUrl: input.documentDocxUrl ?? '',
+    documentPdfUrl: input.documentPdfUrl ?? '',
+    sourceMaterialsUrls: input.sourceMaterialsUrls,
+    imageAssets: input.imageAssets ?? {},
+    createdAt: serverTimestamp(),
+    createdBy: input.owner,
+    ...(input.changeSummary ? { changeSummary: input.changeSummary } : {}),
+    qualityIssues: input.ir.steps.filter((s) => s.needs_human_input).length,
+    needsRetraining: input.needsRetraining ?? false,
+  });
+
+  await batch.commit();
+  return { versionId };
+}
+
+export async function addChange(input: AddChangeInput): Promise<void> {
+  const ref = doc(db, `${SOPS}/${input.sopId}/changes/${input.changeId}`);
+  await setDoc(ref, {
+    id: input.changeId,
+    fromVersion: input.fromVersion,
+    toVersion: input.toVersion,
+    changeIntents: input.changeIntents,
+    skippedIntents: input.skippedIntents ?? [],
+    conflicts: [],
+    completenessIssues: [],
+    stats: {
+      totalRawIntents:
+        input.changeIntents.length + (input.skippedIntents?.length ?? 0),
+      consolidated: input.changeIntents.length,
+      autoApplied: input.changeIntents.filter((i) => i.auto_apply).length,
+      manuallyAccepted: 0,
+      rejected: input.skippedIntents?.length ?? 0,
+      conflictsResolved: 0,
+    },
+    changelogDocxUrl: input.changelogDocxUrl ?? '',
+    createdAt: serverTimestamp(),
+    appliedAt: serverTimestamp(),
+    appliedBy: input.appliedBy,
+    reviewer: input.appliedBy,
+  });
+}
+
+export interface ChangeRecord {
+  id: string;
+  fromVersion: string;
+  toVersion: string;
+  changeIntents: ChangeIntent[];
+  skippedIntents?: Array<{ intent: ChangeIntent; reason: string }>;
+  changelogDocxUrl?: string;
+  createdAt: Timestamp | null;
+  appliedBy: string;
+}
+
+export function subscribeChanges(
+  sopId: string,
+  onNext: (changes: ChangeRecord[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, `${SOPS}/${sopId}/changes`),
+    orderBy('createdAt', 'desc'),
+  );
+  return onSnapshot(q, (snap) => {
+    onNext(snap.docs.map((d) => d.data() as ChangeRecord));
+  });
+}
+
+export function newChangeId(): string {
+  return `change-${nanoid(12)}`;
 }
 
 export { setDoc, doc };

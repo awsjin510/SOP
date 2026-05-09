@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
     meta: { layout: 'main', requiresAuth: true },
   },
   {
+    path: '/sop/:id/update',
+    name: 'update-sop',
+    component: () => import('@/pages/UpdateSopPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
     path: '/job/:jobId',
     name: 'job-progress',
     component: () => import('@/pages/JobProgressPage.vue'),

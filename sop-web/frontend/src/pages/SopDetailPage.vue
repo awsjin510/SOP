@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { ArrowLeft, FileDown } from 'lucide-vue-next';
-import { getSop, getLatestVersion } from '@/services/sop';
+import { ArrowLeft, FileDown, Pencil } from 'lucide-vue-next';
+import {
+  getSop,
+  getLatestVersion,
+  subscribeChanges,
+  type ChangeRecord,
+} from '@/services/sop';
 import { renderMarkdown } from '@/core/renderer/markdown';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 import type { SopDoc } from '@/types/firestore';
@@ -19,6 +24,31 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const docxUrl = ref<string>('');
 const pdfUrl = ref<string>('');
+const changes = ref<ChangeRecord[]>([]);
+let changesUnsub: (() => void) | null = null;
+
+const intentTypeLabel: Record<string, string> = {
+  add_step: '新增步驟',
+  modify_step: '修改步驟',
+  remove_step: '刪除步驟',
+  reorder_step: '調整順序',
+  add_tip: '新增提示',
+  add_warning: '新增警示',
+  add_glossary: '新增術語',
+  modify_glossary: '修改術語',
+  add_troubleshooting: '新增 troubleshooting',
+  modify_troubleshooting: '修改 troubleshooting',
+  remove_troubleshooting: '刪除 troubleshooting',
+  modify_meta: '修改 meta',
+  replace_screenshot: '替換截圖',
+};
+
+function fmtDate(ts: { toDate?: () => Date } | null | undefined): string {
+  if (!ts || typeof ts.toDate !== 'function') return '—';
+  const d = ts.toDate();
+  const local = new Date(d.getTime() + 8 * 3600 * 1000);
+  return local.toISOString().slice(0, 10);
+}
 
 onMounted(async () => {
   try {
@@ -47,12 +77,18 @@ onMounted(async () => {
       ],
       ALLOWED_ATTR: ['href'],
     });
+    // 訂閱變更紀錄（可能為空，那就不顯示變更區塊）
+    changesUnsub = subscribeChanges(sopId.value, (list) => {
+      changes.value = list;
+    });
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     loading.value = false;
   }
 });
+
+onUnmounted(() => changesUnsub?.());
 </script>
 
 <template>
@@ -101,7 +137,14 @@ onMounted(async () => {
               適用對象：{{ sop.targetAudience }}
             </p>
           </div>
-          <div class="flex gap-2 shrink-0">
+          <div class="flex gap-2 shrink-0 flex-wrap">
+            <RouterLink
+              :to="{ name: 'update-sop', params: { id: sop.sopId } }"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent-500 text-white text-sm font-medium hover:bg-accent-600 transition-colors"
+            >
+              <Pencil class="w-4 h-4" />
+              更新
+            </RouterLink>
             <a
               v-if="docxUrl"
               :href="docxUrl"
@@ -132,6 +175,55 @@ onMounted(async () => {
           class="sop-md prose prose-sm max-w-none"
           v-html="renderedHtml"
         />
+      </section>
+
+      <!-- 變更紀錄 -->
+      <section
+        v-if="changes.length > 0"
+        class="bg-white rounded-lg border border-gray-200 p-6 mt-6"
+      >
+        <h2 class="font-semibold text-primary-700 mb-4 text-base">
+          變更紀錄
+        </h2>
+        <ol class="space-y-4">
+          <li
+            v-for="ch in changes"
+            :key="ch.id"
+            class="border-l-4 border-accent-300 pl-4"
+          >
+            <div class="flex items-baseline gap-2 text-sm flex-wrap">
+              <span class="font-medium text-primary-700">
+                v{{ ch.fromVersion }} → v{{ ch.toVersion }}
+              </span>
+              <span class="text-xs text-gray-500">
+                {{ fmtDate(ch.createdAt) }} · {{ ch.appliedBy }}
+              </span>
+            </div>
+            <ul class="mt-2 space-y-1 text-sm text-gray-700">
+              <li
+                v-for="intent in ch.changeIntents"
+                :key="intent.intent_id"
+                class="flex items-start gap-2"
+              >
+                <span
+                  class="px-1.5 py-0.5 bg-primary-50 text-primary-700 rounded text-xs font-medium shrink-0"
+                >
+                  {{ intentTypeLabel[intent.type] ?? intent.type }}
+                </span>
+                <span class="flex-1">{{ intent.description }}</span>
+                <span class="text-xs text-gray-400 shrink-0">
+                  {{ Math.round(intent.confidence * 100) }}%
+                </span>
+              </li>
+            </ul>
+            <p
+              v-if="ch.skippedIntents && ch.skippedIntents.length > 0"
+              class="mt-2 text-xs text-gray-500"
+            >
+              · 跳過 {{ ch.skippedIntents.length }} 項（target 對映不上等）
+            </p>
+          </li>
+        </ol>
       </section>
 
       <p
