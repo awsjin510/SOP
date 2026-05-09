@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentYearMonth, usageDocId } from './usage';
+import { currentYearMonth, usageDocId, listPastMonths } from './usage';
 
 describe('usage helpers', () => {
   it('formats GMT+8 year-month as YYYY-MM', () => {
@@ -16,5 +16,15 @@ describe('usage helpers', () => {
 
   it('builds a stable usage doc id', () => {
     expect(usageDocId('uid-abc', '2026-05')).toBe('uid-abc_2026-05');
+  });
+
+  it('lists past N months in descending order with current month first', () => {
+    const months = listPastMonths(3, new Date('2026-05-08T12:00:00Z'));
+    expect(months).toEqual(['2026-05', '2026-04', '2026-03']);
+  });
+
+  it('handles year rollover when listing past months', () => {
+    const months = listPastMonths(3, new Date('2026-01-15T12:00:00Z'));
+    expect(months).toEqual(['2026-01', '2025-12', '2025-11']);
   });
 });

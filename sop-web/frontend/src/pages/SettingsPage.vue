@@ -4,6 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/firebase/config';
 import { useAuthStore } from '@/stores/auth';
 import { useUsageStore } from '@/stores/usage';
+import { getRecentMonthlyUsage, type UsageStats } from '@/services/usage';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 
 const authStore = useAuthStore();
@@ -18,7 +19,29 @@ const usedPct = computed(() =>
   Math.min(100, Math.round((usedUsd.value / monthlyLimit.value) * 100)),
 );
 
-// W2 驗收用：手動觸發一次 claudeProxy（在 .env.local 已設 ANTHROPIC_API_KEY 時）
+const limitTone = computed(() => {
+  if (usedPct.value >= 100) return 'bg-danger';
+  if (usedPct.value >= 80) return 'bg-yellow-500';
+  return 'bg-primary-500';
+});
+
+const recentUsage = ref<UsageStats[]>([]);
+const recentLoading = ref(false);
+
+async function loadRecent(): Promise<void> {
+  if (!authStore.authUser) return;
+  recentLoading.value = true;
+  try {
+    recentUsage.value = await getRecentMonthlyUsage(authStore.authUser.uid, 6);
+  } finally {
+    recentLoading.value = false;
+  }
+}
+
+const recentMaxUsd = computed(() =>
+  Math.max(1, ...recentUsage.value.map((u) => u.estimatedCostUsd ?? 0)),
+);
+
 const testing = ref(false);
 const testResult = ref<string | null>(null);
 const testError = ref<string | null>(null);
@@ -57,13 +80,14 @@ onMounted(() => {
   if (authStore.authUser) {
     usageStore.bind(authStore.authUser.uid);
     unbindHandler = () => usageStore.unbind();
+    void loadRecent();
   }
 });
 onUnmounted(() => unbindHandler?.());
 </script>
 
 <template>
-  <div>
+  <div class="max-w-2xl mx-auto">
     <h1 class="text-2xl font-semibold text-primary-700 mb-6">個人設定</h1>
 
     <section class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
@@ -80,7 +104,8 @@ onUnmounted(() => unbindHandler?.());
 
       <div class="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
         <div
-          class="h-full bg-primary-500 transition-[width]"
+          class="h-full transition-[width]"
+          :class="limitTone"
           :style="{ width: `${usedPct}%` }"
         />
       </div>
@@ -97,12 +122,48 @@ onUnmounted(() => unbindHandler?.());
       <p v-else class="text-xs text-gray-400 mt-2">本月尚無 API 呼叫紀錄</p>
     </section>
 
+    <!-- 近 6 個月趨勢 -->
+    <section class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-primary-700 mb-4">
+        近 6 個月用量趨勢
+      </h2>
+
+      <LoadingSpinner v-if="recentLoading" label="載入歷史用量…" size="sm" />
+
+      <ul v-else-if="recentUsage.length > 0" class="space-y-2">
+        <li
+          v-for="u in [...recentUsage].reverse()"
+          :key="u.yearMonth"
+          class="flex items-center gap-3 text-xs"
+        >
+          <span class="font-mono w-16 text-gray-600">{{ u.yearMonth }}</span>
+          <div class="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
+            <div
+              class="h-full bg-primary-500/80 transition-[width]"
+              :style="{
+                width: `${Math.min(100, (u.estimatedCostUsd / recentMaxUsd) * 100)}%`,
+              }"
+            />
+          </div>
+          <span class="w-20 text-right text-gray-700 font-mono">
+            ${{ u.estimatedCostUsd.toFixed(2) }}
+          </span>
+        </li>
+      </ul>
+
+      <p v-else class="text-xs text-gray-400">尚無歷史紀錄。</p>
+
+      <p class="text-xs text-gray-400 mt-3">
+        以實際 API 費率（Anthropic input/output tokens）估算；含所有透過 claudeProxy 的呼叫。
+      </p>
+    </section>
+
     <section class="bg-white rounded-lg border border-gray-200 p-6">
       <h2 class="text-base font-semibold text-primary-700 mb-2">
-        W2 驗收：claudeProxy 連線測試
+        連線測試（claudeProxy）
       </h2>
       <p class="text-sm text-gray-600 mb-4">
-        確認 functions/.env.local 已設定 ANTHROPIC_API_KEY 後再點。
+        確認 functions 端 secrets 已設定 <code class="text-xs bg-gray-100 px-1 rounded">ANTHROPIC_API_KEY</code> 後再點。
       </p>
 
       <button

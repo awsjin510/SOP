@@ -1,0 +1,53 @@
+name: Deploy to Firebase Hosting
+
+# 觸發條件：push 到 main，且 secrets.FIREBASE_SERVICE_ACCOUNT 已設定。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 沒設 secret 時 job 會 skip（避免假失敗）
+    if: ${{ vars.FIREBASE_PROJECT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: sop-web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: sop-web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: sop-web/frontend
+        run: pnpm build
+
+      - name: Build functions
+        working-directory: sop-web/functions
+        run: pnpm build
+
+      - name: Deploy to Firebase Hosting + Functions
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          channelId: live
+          entryPoint: sop-web
+          target: ''
