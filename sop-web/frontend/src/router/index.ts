@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/DashboardPage.vue'),
     meta: { layout: 'main', requiresAuth: true },
   },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/pages/SettingsPage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
 ];
 
 export const router = createRouter({

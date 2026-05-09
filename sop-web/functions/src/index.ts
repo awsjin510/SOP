@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase-admin/app';
 
 initializeApp();
 
-// W1：只暴露 helloWorld 用於驗證前端→Cloud Functions 管線。
-// W2 起會新增 claudeProxy；onUserSignedUp 等延後到需要時再加（user doc 由前端 getOrCreateUser 處理）。
+// W1: helloWorld（前端→functions 管線打通驗證）
+// W2: claudeProxy（代理 Anthropic API、速率/月度限制、用量追蹤）
 export { helloWorld } from './hello';
+export { claudeProxy } from './claude-proxy';

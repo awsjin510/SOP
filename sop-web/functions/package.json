@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "firebase-admin": "^13.0.2",
-    "firebase-functions": "^6.1.1"
+    "firebase-functions": "^6.1.1",
+    "@anthropic-ai/sdk": "^0.32.1"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

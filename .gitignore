@@ -15,10 +15,11 @@ node_modules/
 **/lib/
 **/*.tsbuildinfo
 
-# Env
+# Env: ignore real env files but keep .example templates
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
+!*.example
 
 # IDE / OS
 .DS_Store

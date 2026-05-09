@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { LogOut } from 'lucide-vue-next';
+import { LogOut, Settings } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 
 const authStore = useAuthStore();
@@ -28,6 +28,13 @@ async function handleSignOut(): Promise<void> {
         <span class="text-sm text-gray-600 hidden sm:inline">
           {{ authStore.displayName }}
         </span>
+        <RouterLink
+          :to="{ name: 'settings' }"
+          class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-primary-700 transition-colors"
+        >
+          <Settings class="w-4 h-4" />
+          設定
+        </RouterLink>
         <button
           type="button"
           class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-primary-700 transition-colors"
