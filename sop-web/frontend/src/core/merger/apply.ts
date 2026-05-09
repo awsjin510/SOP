@@ -129,9 +129,16 @@ function applyOne(ir: IR, intent: ChangeIntent): string | null {
         } else if (target.field === 'title') {
           step.title = after;
         } else {
-          // 預設視為 action 內容更新
+          // 預設視為 action 內容更新；保留原 screenshot_refs / command 不被沖掉
+          const head = step.actions[0];
           step.actions = [
-            { text: after },
+            {
+              text: after,
+              ...(head?.command !== undefined ? { command: head.command } : {}),
+              ...(head?.screenshot_refs
+                ? { screenshot_refs: head.screenshot_refs }
+                : {}),
+            },
             ...step.actions.slice(1),
           ];
         }
@@ -148,8 +155,33 @@ function applyOne(ir: IR, intent: ChangeIntent): string | null {
     }
 
     case 'reorder_step': {
-      // W6 簡化：略過實作（W7 補）
-      return 'reorder_step W6 暫不支援';
+      // W7：依 target.field = "after:step-XYZ" 把目標 step 移到指定 step 之後；
+      // 缺 after 指示就放到最末。
+      const stepId = target.step_id;
+      if (!stepId) return 'reorder_step 缺 step_id';
+      const idx = findStepIdx(ir, stepId);
+      if (idx === -1) return `找不到 step_id: ${stepId}`;
+      const [moved] = ir.steps.splice(idx, 1);
+      if (!moved) return `reorder_step 取出失敗: ${stepId}`;
+      const afterToken = target.field?.startsWith('after:')
+        ? target.field.slice('after:'.length)
+        : null;
+      if (afterToken) {
+        const tIdx = findStepIdx(ir, afterToken);
+        if (tIdx === -1) {
+          // 找不到參考點 → 放回原位
+          ir.steps.splice(idx, 0, moved);
+          return `reorder_step 找不到參考點 step_id: ${afterToken}`;
+        }
+        ir.steps.splice(tIdx + 1, 0, moved);
+      } else {
+        ir.steps.push(moved);
+      }
+      // 重排 order
+      ir.steps.forEach((s, i) => {
+        s.order = i;
+      });
+      return null;
     }
 
     case 'add_tip': {
@@ -259,8 +291,30 @@ function applyOne(ir: IR, intent: ChangeIntent): string | null {
     }
 
     case 'replace_screenshot': {
-      // W6 不處理；W7 才會接 screenshot_refs 的更新
-      return 'replace_screenshot W6 暫不支援';
+      // W7：把指定 step 的截圖換成新 image_id。
+      // 新 image_id 透過 target.field = "image_id:img-XYZ" 帶入。
+      const stepId = target.step_id;
+      if (!stepId) return 'replace_screenshot 缺 step_id';
+      const idx = findStepIdx(ir, stepId);
+      if (idx === -1) return `找不到 step_id: ${stepId}`;
+      const newImageId = target.field?.startsWith('image_id:')
+        ? target.field.slice('image_id:'.length)
+        : null;
+      if (!newImageId) return 'replace_screenshot 缺新 image_id';
+      const step = ir.steps[idx]!;
+      // 把新 image_id 套入 actions：若已有截圖就替換第一個 action 的 screenshot_refs；
+      // 沒有截圖的 action 就在第一個 action 補上。
+      if (step.actions.length === 0) {
+        step.actions.push({
+          text: step.title,
+          screenshot_refs: [newImageId],
+        });
+      } else {
+        const target0 = step.actions[0]!;
+        target0.screenshot_refs = [newImageId];
+      }
+      step.source_refs = mergeSourceRefs(step.source_refs, intent.source_refs);
+      return null;
     }
   }
 }

@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, ArrowRight, Sparkles, FileText } from 'lucide-vue-next';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Sparkles,
+  FileText,
+  Image as ImageIcon,
+  FileType2,
+  ListChecks,
+} from 'lucide-vue-next';
 import FileUploader from '@/components/FileUploader.vue';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -9,8 +17,10 @@ import { getSop } from '@/services/sop';
 import { createJob } from '@/services/job';
 import {
   runUpdateSopPipeline,
+  classifyUpdateFile,
   UPDATE_SOP_SUBTASKS,
-  type UpdateChangeListFormat,
+  type UpdateMaterial,
+  type UpdateMaterialType,
 } from '@/core/pipelines/update-sop';
 import type { SopDoc } from '@/types/firestore';
 
@@ -28,6 +38,7 @@ const submitError = ref<string | null>(null);
 
 const step = ref<1 | 2 | 3>(1);
 const files = ref<File[]>([]);
+const overrides = ref<Map<string, UpdateMaterialType>>(new Map());
 const changeSummary = ref<string>('');
 
 onMounted(async () => {
@@ -45,19 +56,26 @@ onMounted(async () => {
   }
 });
 
-const changeListFile = computed<File | null>(() => files.value[0] ?? null);
+const materials = computed<UpdateMaterial[]>(() =>
+  files.value.map((file) => ({
+    file,
+    type: overrides.value.get(file.name) ?? classifyUpdateFile(file),
+  })),
+);
 
-const detectedFormat = computed<UpdateChangeListFormat>(() => {
-  const f = changeListFile.value;
-  if (!f) return 'markdown';
-  const name = f.name.toLowerCase();
-  if (name.endsWith('.docx')) return 'docx';
-  return 'markdown';
+const typeBreakdown = computed(() => {
+  const m = new Map<UpdateMaterialType, number>();
+  for (const x of materials.value) {
+    m.set(x.type, (m.get(x.type) ?? 0) + 1);
+  }
+  return m;
 });
 
-const canNextFromStep1 = computed(
-  () => files.value.length > 0 && changeListFile.value !== null,
-);
+const canNextFromStep1 = computed(() => files.value.length > 0);
+
+function setOverride(name: string, t: UpdateMaterialType): void {
+  overrides.value = new Map(overrides.value).set(name, t);
+}
 
 function goNext(): void {
   if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3;
@@ -66,8 +84,29 @@ function goPrev(): void {
   if (step.value > 1) step.value = (step.value - 1) as 1 | 2 | 3;
 }
 
+const TYPE_LABELS: Record<UpdateMaterialType, string> = {
+  change_list: '修改清單',
+  text: '文字檔',
+  pdf: 'PDF',
+  screenshot: '截圖',
+};
+
+const TYPE_OPTIONS: UpdateMaterialType[] = [
+  'change_list',
+  'text',
+  'pdf',
+  'screenshot',
+];
+
+function iconFor(t: UpdateMaterialType) {
+  if (t === 'screenshot') return ImageIcon;
+  if (t === 'pdf') return FileType2;
+  if (t === 'change_list') return ListChecks;
+  return FileText;
+}
+
 async function startProcessing(): Promise<void> {
-  if (!authStore.authUser || !changeListFile.value || !sop.value) return;
+  if (!authStore.authUser || !sop.value || materials.value.length === 0) return;
   submitting.value = true;
   submitError.value = null;
 
@@ -84,8 +123,7 @@ async function startProcessing(): Promise<void> {
       jobId,
       uid,
       sopId: sopId.value,
-      changeListFile: changeListFile.value,
-      changeListFormat: detectedFormat.value,
+      materials: materials.value,
       ...(changeSummary.value.trim()
         ? { changeSummary: changeSummary.value.trim() }
         : {}),
@@ -131,19 +169,22 @@ async function startProcessing(): Promise<void> {
         <p class="text-sm text-primary-700">
           您正在更新：
           <span class="font-semibold">{{ sop.title }}</span>
-          <span class="ml-2 px-2 py-0.5 bg-white text-primary-700 rounded text-xs font-medium border border-primary-200">
+          <span
+            class="ml-2 px-2 py-0.5 bg-white text-primary-700 rounded text-xs font-medium border border-primary-200"
+          >
             v{{ sop.currentVersion }}
           </span>
         </p>
         <p class="text-xs text-primary-700/70 mt-1">
-          {{ sop.stepsCount }} 步驟 · {{ sop.troubleshootingCount }} 個 troubleshooting · {{ sop.glossaryCount }} 個術語
+          {{ sop.stepsCount }} 步驟 · {{ sop.troubleshootingCount }} 個 troubleshooting
+          · {{ sop.glossaryCount }} 個術語
         </p>
       </div>
 
       <!-- 步驟指示 -->
       <ol class="flex items-center gap-2 mb-8 text-xs text-gray-500">
         <li
-          v-for="(label, idx) in ['上傳修改清單', '變更摘要', '確認啟動']"
+          v-for="(label, idx) in ['上傳更新素材', '變更摘要', '確認啟動']"
           :key="label"
           class="flex items-center gap-2"
         >
@@ -172,17 +213,43 @@ async function startProcessing(): Promise<void> {
         class="bg-white rounded-lg border border-gray-200 p-6"
       >
         <h2 class="font-semibold text-primary-700 mb-3">
-          步驟 1 / 3：上傳修改清單
+          步驟 1 / 3：上傳更新素材
         </h2>
         <p class="text-sm text-gray-600 mb-4">
-          支援 .docx（Word 表格 / 條列）或 .md（Markdown 條列）。W7 起會支援會議紀錄、廠商通知等其他格式。
+          支援四種素材：修改清單（.docx / .md）、文字檔（.txt 會議紀錄 / Bug
+          報告）、PDF 廠商通知、新版截圖（.png / .jpg / .webp）。系統會依檔名自動分類，必要時可在下方手動調整。
         </p>
         <FileUploader
           :files="files"
-          :multiple="false"
-          accept=".docx,.md"
+          :multiple="true"
+          accept=".docx,.md,.txt,.pdf,.png,.jpg,.jpeg,.webp"
           @update:files="(v) => (files = v)"
         />
+
+        <ul v-if="materials.length > 0" class="mt-4 space-y-2">
+          <li
+            v-for="m in materials"
+            :key="m.file.name"
+            class="flex items-center gap-3 text-sm bg-gray-50 rounded-md px-3 py-2"
+          >
+            <component :is="iconFor(m.type)" class="w-4 h-4 text-gray-500 shrink-0" />
+            <span class="flex-1 truncate">{{ m.file.name }}</span>
+            <select
+              :value="m.type"
+              class="text-xs rounded border border-gray-300 px-2 py-1 bg-white"
+              @change="
+                setOverride(
+                  m.file.name,
+                  ($event.target as HTMLSelectElement).value as UpdateMaterialType,
+                )
+              "
+            >
+              <option v-for="opt in TYPE_OPTIONS" :key="opt" :value="opt">
+                {{ TYPE_LABELS[opt] }}
+              </option>
+            </select>
+          </li>
+        </ul>
 
         <div class="flex justify-end mt-6">
           <button
@@ -216,11 +283,17 @@ async function startProcessing(): Promise<void> {
           />
         </label>
 
-        <div class="mt-4 text-sm bg-gray-50 rounded-md p-3 flex items-center gap-3">
-          <FileText class="w-4 h-4 text-gray-500 shrink-0" />
-          <span class="flex-1 truncate">{{ changeListFile?.name }}</span>
-          <span class="text-xs text-gray-500">{{ detectedFormat }}</span>
-        </div>
+        <ul class="mt-4 space-y-2 text-sm">
+          <li
+            v-for="[t, count] in [...typeBreakdown.entries()]"
+            :key="t"
+            class="flex items-center gap-2 text-gray-600"
+          >
+            <component :is="iconFor(t)" class="w-4 h-4 text-gray-500" />
+            <span>{{ TYPE_LABELS[t] }}</span>
+            <span class="text-xs text-gray-500">× {{ count }}</span>
+          </li>
+        </ul>
 
         <div class="flex justify-between mt-6">
           <button
@@ -256,8 +329,14 @@ async function startProcessing(): Promise<void> {
             <dd>v{{ sop.currentVersion }}</dd>
           </div>
           <div class="flex">
-            <dt class="w-24 text-gray-500">修改清單</dt>
-            <dd>{{ changeListFile?.name }}</dd>
+            <dt class="w-24 text-gray-500">素材</dt>
+            <dd>
+              {{ materials.length }} 份（{{
+                [...typeBreakdown.entries()]
+                  .map(([t, c]) => `${TYPE_LABELS[t]} ${c}`)
+                  .join('、')
+              }}）
+            </dd>
           </div>
           <div v-if="changeSummary" class="flex">
             <dt class="w-24 text-gray-500">變更摘要</dt>
@@ -266,7 +345,10 @@ async function startProcessing(): Promise<void> {
         </dl>
 
         <p class="text-xs text-gray-500 mb-4">
-          系統會抽取變更意圖並自動套用到 IR，產出新版本（semver 自動 bump）。預估費用 $0.30–$1.50。
+          系統會分流抽取變更意圖、做匯流（去重 / 多源印證 / 衝突偵測 /
+          完整性檢查）後自動套用無衝突項目，產出新版本（semver 自動 bump）。
+          有衝突或完整性疑慮的項目會留在「變更紀錄」中等待 W8 審核介面處理。
+          預估費用 $0.30–$3.00。
         </p>
 
         <p
