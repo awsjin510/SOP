@@ -74,6 +74,42 @@ function sanitizeFilename(name: string): string {
     .replace(/[^\w.\-一-鿿]/g, '_');
 }
 
+/**
+ * 把渲染好的 Word/PDF 上傳到 users/{uid}/sops/{sopId}/{versionId}.{ext}
+ */
+export async function uploadRenderedDoc(
+  uid: string,
+  sopId: string,
+  versionId: string,
+  blob: Blob,
+  ext: 'docx' | 'pdf',
+): Promise<UploadResult> {
+  const path = `users/${uid}/sops/${sopId}/${versionId}.${ext}`;
+  const ref = storageRef(storage, path);
+  const contentType =
+    ext === 'docx'
+      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      : 'application/pdf';
+  const task = uploadBytesResumable(ref, blob, { contentType });
+  await new Promise<void>((resolve, reject) => {
+    task.on('state_changed', undefined, reject, () => resolve());
+  });
+  const downloadUrl = await getDownloadURL(task.snapshot.ref);
+  return { storagePath: path, downloadUrl };
+}
+
+/**
+ * 透過 download URL 取回 blob（給 PDF/Word 渲染嵌入截圖用）。
+ */
+export async function fetchAsBytes(url: string): Promise<Uint8Array> {
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`下載失敗 (${resp.status}): ${url}`);
+  }
+  const buf = await resp.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
 // W3 暫時用：把 File 讀成純文字（給 transcript 用）
 export async function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

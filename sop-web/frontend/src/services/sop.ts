@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/firebase/config';
 import type { IR } from '@/core/ir/schemas';
-import type { SopDoc } from '@/types/firestore';
+import type { ImageAsset, SopDoc } from '@/types/firestore';
 
 const SOPS = 'sops';
 
@@ -23,7 +23,11 @@ export interface CreateSopInput {
   owner: string;
   ir: IR;
   documentMarkdown?: string;
+  documentDocxUrl?: string;
+  documentPdfUrl?: string;
   sourceMaterialsUrls: string[];
+  /** image_id → asset 對映，給之後 Word/PDF 渲染用 */
+  imageAssets?: Record<string, ImageAsset>;
 }
 
 /**
@@ -73,9 +77,10 @@ export async function createSopWithVersion(input: CreateSopInput): Promise<{
     version: input.ir.version,
     ir: input.ir,
     documentMarkdown: input.documentMarkdown ?? '',
-    documentDocxUrl: '',
-    documentPdfUrl: '',
+    documentDocxUrl: input.documentDocxUrl ?? '',
+    documentPdfUrl: input.documentPdfUrl ?? '',
     sourceMaterialsUrls: input.sourceMaterialsUrls,
+    imageAssets: input.imageAssets ?? {},
     createdAt: serverTimestamp(),
     createdBy: input.owner,
     qualityIssues: input.ir.steps.filter((s) => s.needs_human_input).length,
@@ -96,6 +101,9 @@ export async function getLatestVersion(sopId: string): Promise<{
   id: string;
   ir: IR;
   documentMarkdown: string;
+  documentDocxUrl: string;
+  documentPdfUrl: string;
+  imageAssets: Record<string, ImageAsset>;
   createdAt: Timestamp | null;
 } | null> {
   const sop = await getSop(sopId);
@@ -106,14 +114,43 @@ export async function getLatestVersion(sopId: string): Promise<{
   const data = snap.data() as {
     ir: IR;
     documentMarkdown?: string;
+    documentDocxUrl?: string;
+    documentPdfUrl?: string;
+    imageAssets?: Record<string, ImageAsset>;
     createdAt: Timestamp;
   };
   return {
     id: versionId,
     ir: data.ir,
     documentMarkdown: data.documentMarkdown ?? '',
+    documentDocxUrl: data.documentDocxUrl ?? '',
+    documentPdfUrl: data.documentPdfUrl ?? '',
+    imageAssets: data.imageAssets ?? {},
     createdAt: data.createdAt ?? null,
   };
+}
+
+/**
+ * 更新 version 文件中的 docx/pdf URL（W5 渲染完成後呼叫）。
+ * Firestore Rules 拒絕 update versions 子文件，這裡會用 admin path？
+ *
+ * 注意：security rules 規定 versions 不可 update。為了支援渲染後寫入 URL，
+ * 採取「先建立版本不含 URL，再透過特殊方式更新」太複雜；改採 W5 策略：
+ *   pipeline 在 createSopWithVersion 之前先渲染，把 URL 一併傳入。
+ */
+export async function updateVersionRenderedDocs(
+  _sopId: string,
+  _versionId: string,
+  _patch: Partial<{
+    documentDocxUrl: string;
+    documentPdfUrl: string;
+  }>,
+): Promise<void> {
+  // W5 不走這條路；保留簽名以利之後更新流程使用（changes 子集合會搭配新版本）
+  throw new Error(
+    'versions 子文件不可 update（Firestore Rules）。' +
+      '請改在 createSopWithVersion 階段一併寫入。',
+  );
 }
 
 /**

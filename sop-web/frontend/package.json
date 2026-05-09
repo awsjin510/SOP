@@ -24,7 +24,11 @@
     "marked": "^15.0.5",
     "dompurify": "^3.2.3",
     "mammoth": "^1.9.0",
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "docx": "^9.1.0",
+    "pdf-lib": "^1.17.1",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "@fontsource/noto-sans-tc": "^5.1.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

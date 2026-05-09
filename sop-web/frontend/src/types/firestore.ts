@@ -27,6 +27,25 @@ export interface UserDoc {
   role: 'admin' | 'member' | null;
 }
 
+/**
+ * 對 IR 中 image_id 的具體檔案參照（給 Word/PDF 渲染器用）
+ */
+export interface ImageAsset {
+  storagePath: string;
+  downloadUrl: string;
+  contentType: string;
+  /** 原始檔名（讓使用者識別） */
+  sourceFile: string;
+}
+
+export interface RenderedDocs {
+  docxStoragePath?: string;
+  docxDownloadUrl?: string;
+  pdfStoragePath?: string;
+  pdfDownloadUrl?: string;
+  renderedAt?: Timestamp;
+}
+
 // W3+ 才會用到，先留 placeholder
 export interface SopDoc {
   id: string;

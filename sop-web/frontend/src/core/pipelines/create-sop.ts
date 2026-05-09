@@ -11,9 +11,13 @@ import { buildIrFromTranscript } from '@/core/ir/builder';
 import { buildIrFromMultiSource } from '@/core/ir/multi-builder';
 import { runEnhancementLoop, type SourceMaterial } from '@/core/enhancement/loop';
 import { renderMarkdown } from '@/core/renderer/markdown';
+import { renderDocx } from '@/core/renderer/docx';
+import { renderPdf } from '@/core/renderer/pdf';
 import {
   uploadJobFile,
+  uploadRenderedDoc,
   readFileAsText,
+  fetchAsBytes,
 } from '@/services/storage';
 import {
   updateJob,
@@ -24,6 +28,7 @@ import { createSopWithVersion } from '@/services/sop';
 import type { TranscriptPayload } from '@/core/extractors/transcript';
 import type { DocumentPayload } from '@/core/extractors/document';
 import type { ScreenshotPayload } from '@/core/extractors/screenshot';
+import type { ImageAsset } from '@/types/firestore';
 
 export interface CreateSopMeta {
   sopId: string;
@@ -60,7 +65,7 @@ export const CREATE_SOP_SUBTASKS = [
   '描述截圖',
   '多源整合',
   '內訓增強',
-  '產出 Markdown',
+  '產出 Word/PDF',
   '寫入 Firestore',
 ] as const;
 
@@ -221,6 +226,8 @@ export async function runCreateSopPipeline(
 
     // === 4. 描述截圖 ===
     const screenshotPayloads: ScreenshotPayload[] = [];
+    // image_id → asset 對映（給後續渲染嵌入截圖用）
+    const imageAssets: Record<string, ImageAsset> = {};
     if (screenshots.length === 0) {
       await setSubtaskStatus(jobId, subtasks[3], 'skipped', '無截圖素材');
     } else {
@@ -233,6 +240,16 @@ export async function runCreateSopPipeline(
           { sourceFile: f.file.name },
         );
         screenshotPayloads.push(out.payload);
+        // 紀錄 image_id → 上傳路徑與 URL（從 uploadedFiles 找回）
+        const uploaded = uploadedFiles.find((u) => u.name === f.file.name);
+        if (uploaded) {
+          imageAssets[out.payload.image_id] = {
+            storagePath: uploaded.storagePath,
+            downloadUrl: uploaded.storageUrl,
+            contentType: uploaded.contentType,
+            sourceFile: f.file.name,
+          };
+        }
         sourceMaterials.push({
           source_file: f.file.name,
           extractor_type: 'screenshot',
@@ -321,15 +338,56 @@ export async function runCreateSopPipeline(
     );
     await updateJob(jobId, { progress: 88 });
 
-    // === 7. 產 Markdown ===
+    // === 7. 產 Markdown / Word / PDF ===
     await updateJob(jobId, {
       status: 'rendering',
       currentStep: subtasks[6],
       progress: 92,
     });
     await setSubtaskStatus(jobId, subtasks[6], 'running');
+
     const markdown = renderMarkdown(ir);
-    await setSubtaskStatus(jobId, subtasks[6], 'completed');
+
+    // Image resolver：從 imageAssets 拿 download URL → fetch 成 bytes
+    const imageBytesCache = new Map<
+      string,
+      { bytes: Uint8Array; contentType: string }
+    >();
+    const resolveImage = async (
+      imageId: string,
+    ): Promise<{ bytes: Uint8Array; contentType: string } | null> => {
+      if (imageBytesCache.has(imageId)) return imageBytesCache.get(imageId)!;
+      const asset = imageAssets[imageId];
+      if (!asset) return null;
+      try {
+        const bytes = await fetchAsBytes(asset.downloadUrl);
+        const data = { bytes, contentType: asset.contentType };
+        imageBytesCache.set(imageId, data);
+        return data;
+      } catch (err) {
+        console.warn(`[render] failed to fetch image ${imageId}`, err);
+        return null;
+      }
+    };
+
+    // 並行渲染 Word + PDF（兩者讀取相同的 image bytes，但快取共用）
+    const versionId = `v${ir.version}`;
+    const [docxBlob, pdfBlob] = await Promise.all([
+      renderDocx(ir, { resolveImage }),
+      renderPdf(ir, { resolveImage }),
+    ]);
+
+    const [docxUpload, pdfUpload] = await Promise.all([
+      uploadRenderedDoc(uid, meta.sopId, versionId, docxBlob, 'docx'),
+      uploadRenderedDoc(uid, meta.sopId, versionId, pdfBlob, 'pdf'),
+    ]);
+
+    await setSubtaskStatus(
+      jobId,
+      subtasks[6],
+      'completed',
+      `Word ${(docxBlob.size / 1024).toFixed(0)}KB / PDF ${(pdfBlob.size / 1024).toFixed(0)}KB`,
+    );
 
     // === 8. 寫入 Firestore ===
     await updateJob(jobId, {
@@ -343,7 +401,10 @@ export async function runCreateSopPipeline(
       owner: uid,
       ir,
       documentMarkdown: markdown,
+      documentDocxUrl: docxUpload.downloadUrl,
+      documentPdfUrl: pdfUpload.downloadUrl,
       sourceMaterialsUrls: uploadedFiles.map((f) => f.storageUrl),
+      imageAssets,
     });
 
     await setSubtaskStatus(jobId, subtasks[7], 'completed');

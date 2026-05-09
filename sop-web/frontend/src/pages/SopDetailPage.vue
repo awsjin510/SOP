@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { ArrowLeft } from 'lucide-vue-next';
+import { ArrowLeft, FileDown } from 'lucide-vue-next';
 import { getSop, getLatestVersion } from '@/services/sop';
 import { renderMarkdown } from '@/core/renderer/markdown';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
@@ -17,6 +17,8 @@ const markdownSource = ref<string>('');
 const renderedHtml = ref<string>('');
 const loading = ref(true);
 const error = ref<string | null>(null);
+const docxUrl = ref<string>('');
+const pdfUrl = ref<string>('');
 
 onMounted(async () => {
   try {
@@ -29,6 +31,8 @@ onMounted(async () => {
       return;
     }
     sop.value = s;
+    docxUrl.value = v.documentDocxUrl;
+    pdfUrl.value = v.documentPdfUrl;
     // 優先用版本中存好的 documentMarkdown；若無則臨時 render
     const md = v.documentMarkdown || renderMarkdown(v.ir);
     markdownSource.value = md;
@@ -74,26 +78,50 @@ onMounted(async () => {
 
     <template v-else-if="sop">
       <header class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-        <h1 class="text-2xl font-semibold text-primary-700 mb-2">
-          {{ sop.title }}
-        </h1>
-        <div class="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-          <span class="px-2 py-0.5 bg-primary-100 text-primary-700 rounded text-xs font-medium">
-            v{{ sop.currentVersion }}
-          </span>
-          <span v-if="sop.category">{{ sop.category }}</span>
-          <span>·</span>
-          <span>{{ sop.difficulty }}</span>
-          <span>·</span>
-          <span>{{ sop.stepsCount }} 步驟</span>
-          <span v-if="sop.troubleshootingCount > 0">
-            · {{ sop.troubleshootingCount }} 個 troubleshooting
-          </span>
-          <span v-if="sop.glossaryCount > 0"> · {{ sop.glossaryCount }} 個術語 </span>
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <h1 class="text-2xl font-semibold text-primary-700 mb-2">
+              {{ sop.title }}
+            </h1>
+            <div class="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+              <span class="px-2 py-0.5 bg-primary-100 text-primary-700 rounded text-xs font-medium">
+                v{{ sop.currentVersion }}
+              </span>
+              <span v-if="sop.category">{{ sop.category }}</span>
+              <span>·</span>
+              <span>{{ sop.difficulty }}</span>
+              <span>·</span>
+              <span>{{ sop.stepsCount }} 步驟</span>
+              <span v-if="sop.troubleshootingCount > 0">
+                · {{ sop.troubleshootingCount }} 個 troubleshooting
+              </span>
+              <span v-if="sop.glossaryCount > 0"> · {{ sop.glossaryCount }} 個術語 </span>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              適用對象：{{ sop.targetAudience }}
+            </p>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <a
+              v-if="docxUrl"
+              :href="docxUrl"
+              :download="`${sop.sopId}-v${sop.currentVersion}.docx`"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-primary-700 text-white text-sm font-medium hover:bg-primary-800 transition-colors"
+            >
+              <FileDown class="w-4 h-4" />
+              Word
+            </a>
+            <a
+              v-if="pdfUrl"
+              :href="pdfUrl"
+              :download="`${sop.sopId}-v${sop.currentVersion}.pdf`"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-primary-700 text-primary-700 text-sm font-medium hover:bg-primary-50 transition-colors"
+            >
+              <FileDown class="w-4 h-4" />
+              PDF
+            </a>
+          </div>
         </div>
-        <p class="text-xs text-gray-500 mt-2">
-          適用對象：{{ sop.targetAudience }}
-        </p>
       </header>
 
       <section class="bg-white rounded-lg border border-gray-200 p-6">
@@ -106,8 +134,11 @@ onMounted(async () => {
         />
       </section>
 
-      <p class="text-xs text-gray-400 mt-6 text-center">
-        Word / PDF 下載將於 W5 階段開放。
+      <p
+        v-if="!docxUrl && !pdfUrl"
+        class="text-xs text-gray-400 mt-6 text-center"
+      >
+        此 SOP 尚未產出 Word/PDF（建立流程未完成或來自舊版本）。
       </p>
     </template>
   </div>
