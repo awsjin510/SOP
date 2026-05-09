@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
     meta: { layout: 'main', requiresAuth: true },
   },
   {
+    path: '/job/:jobId/review',
+    name: 'review',
+    component: () => import('@/pages/ReviewInterfacePage.vue'),
+    meta: { layout: 'main', requiresAuth: true },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/pages/SettingsPage.vue'),

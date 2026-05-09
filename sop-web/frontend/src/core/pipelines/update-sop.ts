@@ -21,7 +21,12 @@ import {
 import {
   updateJob,
   setSubtaskStatus,
+  subscribeJob,
   type JobUploadedFile,
+  type JobIntermediate,
+  type ConflictReview,
+  type CompletenessIssueReview,
+  type ProcessingJob,
 } from '@/services/job';
 import {
   addVersion,
@@ -54,6 +59,13 @@ export interface UpdateSopJobInput {
   appliedBy: string;
 }
 
+export interface UpdateSopAnalysisResult {
+  /** 'awaiting_review'：暫停等待人工審核；'auto_completed'：直接套用無暫停 */
+  outcome: 'awaiting_review' | 'auto_completed';
+  /** auto_completed 時填入 */
+  applied?: UpdateSopJobResult;
+}
+
 export interface UpdateSopJobResult {
   sopId: string;
   versionId: string;
@@ -68,6 +80,7 @@ export const UPDATE_SOP_SUBTASKS = [
   '讀取現有 IR',
   '抽取變更意圖',
   '匯流與檢查',
+  '人工審核',
   '套用變更',
   '產出 Markdown',
   '產出 Word/PDF',
@@ -76,7 +89,7 @@ export const UPDATE_SOP_SUBTASKS = [
 ] as const;
 
 export { type ChangeListFormat };
-// W6 兼容：保留型別 export 給 UI；但流程已改走 multi-material。
+// W6 兼容：保留型別 export 給 UI。
 export type UpdateChangeListFormat = ChangeListFormat;
 
 // ============================================================
@@ -97,7 +110,6 @@ export function classifyUpdateFile(file: File): UpdateMaterialType {
   if (name.endsWith('.md') || name.endsWith('.markdown')) {
     return 'change_list';
   }
-  // 預設：純文字檔走 text 抽取器
   return 'text';
 }
 
@@ -116,27 +128,20 @@ function detectChangeListFormat(file: File): ChangeListFormat {
 }
 
 // ============================================================
-// Pipeline
+// Phase 1：分析（上傳 → 抽取 → 匯流 → 寫入 intermediate）
 // ============================================================
 
 /**
- * 更新 SOP 主流程（W7 多素材匯流版）。
+ * 第一段：上傳所有素材、抽取 intents、匯流，最後寫入 job.intermediate。
  *
- * 流程：
- * 1. 上傳所有素材
- * 2. 讀現有 IR
- * 3. 分流抽取（change_list / text / pdf / screenshot）
- * 4. 匯流：去重 + 衝突偵測 + 完整性檢查
- * 5. 套用「無衝突」的 intents（衝突留 changes 紀錄供 W8 審核）
- * 6. 渲染新版本
- * 7. 寫入 Firestore（versions + changes）
- *
- * **注意**：W7 不含人工審核閘門（W8 才補），衝突的 intents 不會被自動套用。
+ * 結束狀態：
+ * - 若無衝突且無「需人工審核」項 → 接著呼叫 phase 2 自動完成。
+ * - 否則 status='awaiting_review'，等待 UI 觸發 phase 2。
  */
-export async function runUpdateSopPipeline(
+export async function runUpdateSopAnalysis(
   input: UpdateSopJobInput,
-): Promise<UpdateSopJobResult> {
-  const { jobId, uid, sopId, materials, appliedBy } = input;
+): Promise<UpdateSopAnalysisResult> {
+  const { jobId, uid, sopId, materials } = input;
   const subtasks = UPDATE_SOP_SUBTASKS;
 
   if (materials.length === 0) {
@@ -153,7 +158,6 @@ export async function runUpdateSopPipeline(
     await setSubtaskStatus(jobId, subtasks[0], 'running');
 
     const uploadedFiles: JobUploadedFile[] = [];
-    /** screenshot file → 對應 image_id（W7 新截圖會被當作新版本的 imageAsset） */
     const newImageAssets: Record<string, ImageAsset> = {};
     const screenshotImageIdByFileName = new Map<string, string>();
 
@@ -168,7 +172,6 @@ export async function runUpdateSopPipeline(
         size: m.file.size,
         contentType: m.file.type || 'application/octet-stream',
       });
-      // screenshot 立刻產生 image_id，後續抽取器產出的 replace_screenshot 會用這個 ID
       if (m.type === 'screenshot') {
         const imageId = `img-${nanoid(10)}`;
         screenshotImageIdByFileName.set(m.file.name, imageId);
@@ -208,9 +211,7 @@ export async function runUpdateSopPipeline(
     await updateJob(jobId, { currentStep: subtasks[2], progress: 30 });
     await setSubtaskStatus(jobId, subtasks[2], 'running');
 
-    /** 各抽取器產的 raw intent 陣列，等下進 merger */
     const rawIntents: ChangeIntent[][] = [];
-    /** PDF 抽取器產的術語對映 */
     const allTermMappings: TermMapping[] = [];
     let totalRawIntents = 0;
 
@@ -261,16 +262,12 @@ export async function runUpdateSopPipeline(
             },
             { sourceFile: m.file.name },
           );
-          // 把 replace_screenshot 的 target.field 注入該檔的 image_id
           const imageId = screenshotImageIdByFileName.get(m.file.name);
           const stitched = out.payload.intents.map((intent) => {
             if (intent.type !== 'replace_screenshot' || !imageId) return intent;
             return {
               ...intent,
-              target: {
-                ...intent.target,
-                field: `image_id:${imageId}`,
-              },
+              target: { ...intent.target, field: `image_id:${imageId}` },
             };
           });
           rawIntents.push(stitched);
@@ -278,7 +275,6 @@ export async function runUpdateSopPipeline(
         }
       } catch (err) {
         console.warn(`[update-sop] extractor failed for ${m.file.name}`, err);
-        // 單一素材抽取失敗不應終止整個 pipeline；其他素材繼續
       }
     }
     await setSubtaskStatus(
@@ -301,6 +297,35 @@ export async function runUpdateSopPipeline(
     await setSubtaskStatus(jobId, subtasks[3], 'running');
 
     const merge = mergeChangeIntents(baseIr, rawIntents);
+
+    // 將 merger 的 intents/conflicts/issues 轉成 review 結構（補預設值）
+    const reviewIntents: ChangeIntent[] = merge.intents.map((i) => ({
+      ...i,
+      // 高信心 + auto_apply → 預設 accepted；否則 pending
+      status: i.auto_apply ? 'accepted' : 'pending',
+    }));
+    const reviewConflicts: ConflictReview[] = merge.conflicts.map((c) => ({
+      ...c,
+      ...(c.recommendedOptionIndex !== undefined
+        ? { resolvedOptionIndex: c.recommendedOptionIndex }
+        : {}),
+    }));
+    const reviewIssues: CompletenessIssueReview[] = merge.completenessIssues.map(
+      (i) => ({ ...i }),
+    );
+
+    const intermediate: JobIntermediate = {
+      fromVersion,
+      intents: reviewIntents,
+      conflicts: reviewConflicts,
+      completenessIssues: reviewIssues,
+      termMappings: dedupTermMappings(allTermMappings),
+      newImageAssets,
+      ...(input.changeSummary ? { changeSummary: input.changeSummary } : {}),
+      appliedBy: input.appliedBy,
+      stats: merge.stats,
+    };
+    await updateJob(jobId, { intermediate, progress: 50 });
     await setSubtaskStatus(
       jobId,
       subtasks[3],
@@ -308,48 +333,131 @@ export async function runUpdateSopPipeline(
       `合併 ${merge.stats.mergedCount} 項；衝突 ${merge.conflicts.length} 組；完整性問題 ${merge.completenessIssues.length} 項`,
     );
 
-    // === 5. 套用變更 ===
-    await updateJob(jobId, { currentStep: subtasks[4], progress: 55 });
-    await setSubtaskStatus(jobId, subtasks[4], 'running');
+    // === 5. 是否需要審核？===
+    const needsReview =
+      reviewConflicts.length > 0 ||
+      reviewIntents.some((i) => i.status === 'pending') ||
+      reviewIssues.length > 0;
 
-    const intentsToApply = merge.intents;
-    if (intentsToApply.length === 0) {
-      // 全部落入衝突 → 沒有變更可套（W7 不做版本 bump，直接報錯）
-      throw new Error(
-        `所有變更皆有衝突或完整性疑慮（${merge.conflicts.length} 組衝突 / ${merge.completenessIssues.length} 項完整性問題），請使用 W8 審核介面處理`,
-      );
+    if (needsReview) {
+      await updateJob(jobId, {
+        status: 'awaiting_review',
+        currentStep: subtasks[4],
+        progress: 55,
+      });
+      await setSubtaskStatus(jobId, subtasks[4], 'running');
+      return { outcome: 'awaiting_review' };
     }
 
-    const { newVersion } = bumpForIntents(fromVersion, intentsToApply);
+    // 全自動：跳過第 4 步，直接 phase 2
+    await setSubtaskStatus(jobId, subtasks[4], 'skipped', '無需審核（全部高信心 + 無衝突）');
+    const applied = await runUpdateSopApply(jobId);
+    return { outcome: 'auto_completed', applied };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await updateJob(jobId, {
+      status: 'failed',
+      error: { message, code: 'pipeline_error' },
+    });
+    throw err;
+  }
+}
+
+// ============================================================
+// Phase 2：套用（從 intermediate 讀已 accepted → apply → render → persist）
+// ============================================================
+
+/**
+ * 第二段：從 job.intermediate 讀取已審核完的 intents，套用到 base IR，
+ * 渲染、寫入新版本與 changes 文件。
+ *
+ * 此函式會自己讀 job → 用 sopId / fromVersion 重拉最新 IR。
+ */
+export async function runUpdateSopApply(
+  jobId: string,
+): Promise<UpdateSopJobResult> {
+  const subtasks = UPDATE_SOP_SUBTASKS;
+
+  // 先讀 job
+  const job = await fetchJob(jobId);
+  if (!job) throw new Error(`找不到 job ${jobId}`);
+  if (!job.intermediate) throw new Error('job 尚無中介資料（請先跑分析）');
+  if (!job.sopId) throw new Error('job 缺 sopId');
+  const sopId = job.sopId;
+  const uid = job.owner;
+  const interim = job.intermediate;
+
+  try {
+    await updateJob(jobId, {
+      status: 'merging',
+      currentStep: subtasks[5],
+      progress: 60,
+    });
+    await setSubtaskStatus(jobId, subtasks[5], 'running');
+
+    // 1. 重拉最新 IR（保險：審核期間若有別人改動）
+    const latest = await getLatestVersion(sopId);
+    if (!latest) throw new Error(`找不到 SOP ${sopId} 的版本`);
+    if (latest.ir.version !== interim.fromVersion) {
+      console.warn(
+        `[update-sop] base 版本已從 ${interim.fromVersion} 變成 ${latest.ir.version}；仍以最新版本套用`,
+      );
+    }
+    const baseIr = latest.ir;
+
+    // 2. 收集要套用的 intents：accepted + modified + 衝突已選定的那一筆
+    const acceptedIntents = interim.intents.filter(
+      (i) => i.status === 'accepted' || i.status === 'modified',
+    );
+    const fromConflicts: ChangeIntent[] = [];
+    for (const c of interim.conflicts) {
+      if (c.dismissed) continue;
+      const idx = c.resolvedOptionIndex;
+      if (idx === undefined) continue; // 仍未決，視為跳過
+      const picked = c.options[idx];
+      if (picked) {
+        fromConflicts.push({ ...picked, status: 'accepted' });
+      }
+    }
+    const intentsToApply: ChangeIntent[] = [
+      ...applyUserModifications(acceptedIntents),
+      ...fromConflicts,
+    ];
+
+    if (intentsToApply.length === 0) {
+      throw new Error('沒有任何已接受的變更，無法產生新版本');
+    }
+
+    const { newVersion } = bumpForIntents(latest.ir.version, intentsToApply);
     const nowIso = new Date().toISOString();
-    const applyResult = applyChangeIntents(baseIr, intentsToApply, {
+    const result = applyChangeIntents(baseIr, intentsToApply, {
       newVersion,
       updatedAt: nowIso,
     });
     await setSubtaskStatus(
       jobId,
-      subtasks[4],
+      subtasks[5],
       'completed',
-      `套用 ${applyResult.applied.length} 項；跳過 ${applyResult.skipped.length} 項；新版本 v${newVersion}`,
+      `套用 ${result.applied.length} 項；跳過 ${result.skipped.length} 項；新版本 v${newVersion}`,
     );
 
-    // === 6. 產 Markdown ===
+    // 3. Markdown
     await updateJob(jobId, {
       status: 'rendering',
-      currentStep: subtasks[5],
-      progress: 65,
+      currentStep: subtasks[6],
+      progress: 70,
     });
-    await setSubtaskStatus(jobId, subtasks[5], 'running');
-    const markdown = renderMarkdown(applyResult.ir);
-    await setSubtaskStatus(jobId, subtasks[5], 'completed');
-
-    // === 7. 產 Word / PDF ===
-    await updateJob(jobId, { currentStep: subtasks[6], progress: 75 });
     await setSubtaskStatus(jobId, subtasks[6], 'running');
+    const markdown = renderMarkdown(result.ir);
+    await setSubtaskStatus(jobId, subtasks[6], 'completed');
+
+    // 4. Word + PDF
+    await updateJob(jobId, { currentStep: subtasks[7], progress: 78 });
+    await setSubtaskStatus(jobId, subtasks[7], 'running');
 
     const mergedAssets: Record<string, ImageAsset> = {
       ...latest.imageAssets,
-      ...newImageAssets,
+      ...interim.newImageAssets,
     };
     const resolveImage = async (imageId: string) => {
       const asset = mergedAssets[imageId];
@@ -358,27 +466,25 @@ export async function runUpdateSopPipeline(
         const bytes = await fetchAsBytes(asset.downloadUrl);
         return { bytes, contentType: asset.contentType };
       } catch (err) {
-        console.warn('[update-sop] image fetch failed', imageId, err);
+        console.warn('[update-sop apply] image fetch failed', imageId, err);
         return null;
       }
     };
-
-    const versionId = `v${applyResult.ir.version}`;
+    const versionId = `v${result.ir.version}`;
     const [docxBlob, pdfBlob] = await Promise.all([
-      renderDocx(applyResult.ir, { resolveImage }),
-      renderPdf(applyResult.ir, { resolveImage }),
+      renderDocx(result.ir, { resolveImage }),
+      renderPdf(result.ir, { resolveImage }),
     ]);
     const [docxUpload, pdfUpload] = await Promise.all([
       uploadRenderedDoc(uid, sopId, versionId, docxBlob, 'docx'),
       uploadRenderedDoc(uid, sopId, versionId, pdfBlob, 'pdf'),
     ]);
-    await setSubtaskStatus(jobId, subtasks[6], 'completed');
-    await updateJob(jobId, { progress: 85 });
+    await setSubtaskStatus(jobId, subtasks[7], 'completed');
+    await updateJob(jobId, { progress: 88 });
 
-    // === 8. 寫入新版本 ===
-    await updateJob(jobId, { currentStep: subtasks[7], progress: 90 });
-    await setSubtaskStatus(jobId, subtasks[7], 'running');
-
+    // 5. 寫新版本
+    await updateJob(jobId, { currentStep: subtasks[8], progress: 92 });
+    await setSubtaskStatus(jobId, subtasks[8], 'running');
     const changeId = newChangeId();
     const needsRetraining = intentsToApply.some(
       (i) => i.impact?.needs_retraining === true,
@@ -386,36 +492,36 @@ export async function runUpdateSopPipeline(
     await addVersion({
       sopId,
       owner: uid,
-      ir: applyResult.ir,
-      fromVersion,
+      ir: result.ir,
+      fromVersion: latest.ir.version,
       changeId,
-      ...(input.changeSummary ? { changeSummary: input.changeSummary } : {}),
+      ...(interim.changeSummary ? { changeSummary: interim.changeSummary } : {}),
       documentMarkdown: markdown,
       documentDocxUrl: docxUpload.downloadUrl,
       documentPdfUrl: pdfUpload.downloadUrl,
-      sourceMaterialsUrls: uploadedFiles.map((f) => f.storageUrl),
+      sourceMaterialsUrls: job.uploadedFiles.map((f) => f.storageUrl),
       imageAssets: mergedAssets,
       needsRetraining,
     });
-    await setSubtaskStatus(jobId, subtasks[7], 'completed');
+    await setSubtaskStatus(jobId, subtasks[8], 'completed');
 
-    // === 9. 寫入變更紀錄（含衝突 / 完整性 / 術語對映） ===
-    await updateJob(jobId, { currentStep: subtasks[8], progress: 96 });
-    await setSubtaskStatus(jobId, subtasks[8], 'running');
+    // 6. 寫變更紀錄（含未決衝突 / 完整性問題作為審核紀錄）
+    await updateJob(jobId, { currentStep: subtasks[9], progress: 96 });
+    await setSubtaskStatus(jobId, subtasks[9], 'running');
 
     await addChangeWithMergeArtifacts({
       sopId,
       changeId,
-      fromVersion,
+      fromVersion: latest.ir.version,
       toVersion: newVersion,
-      appliedBy,
-      changeIntents: applyResult.applied,
-      skippedIntents: applyResult.skipped,
-      conflicts: merge.conflicts,
-      completenessIssues: merge.completenessIssues,
-      termMappings: dedupTermMappings(allTermMappings),
+      appliedBy: interim.appliedBy,
+      changeIntents: result.applied,
+      skippedIntents: result.skipped,
+      conflicts: interim.conflicts,
+      completenessIssues: interim.completenessIssues,
+      termMappings: interim.termMappings,
     });
-    await setSubtaskStatus(jobId, subtasks[8], 'completed');
+    await setSubtaskStatus(jobId, subtasks[9], 'completed');
 
     await updateJob(jobId, {
       status: 'completed',
@@ -427,9 +533,9 @@ export async function runUpdateSopPipeline(
       sopId,
       versionId,
       changeId,
-      appliedCount: applyResult.applied.length,
-      conflictCount: merge.conflicts.length,
-      completenessIssueCount: merge.completenessIssues.length,
+      appliedCount: result.applied.length,
+      conflictCount: interim.conflicts.length,
+      completenessIssueCount: interim.completenessIssues.length,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -442,8 +548,52 @@ export async function runUpdateSopPipeline(
 }
 
 // ============================================================
-// 內部：把 conflicts / completeness / termMappings 一併寫進 changes 文件
+// 使用者修改的 intents：把 user_modification.after 套回 after
 // ============================================================
+
+function applyUserModifications(intents: ChangeIntent[]): ChangeIntent[] {
+  return intents.map((i) =>
+    i.user_modification
+      ? { ...i, after: i.user_modification.after }
+      : i,
+  );
+}
+
+// ============================================================
+// W7 兼容入口：一氣呵成（內部會自動暫停 / 不暫停）
+// ============================================================
+
+export async function runUpdateSopPipeline(
+  input: UpdateSopJobInput,
+): Promise<UpdateSopJobResult | { awaitingReview: true; jobId: string }> {
+  const result = await runUpdateSopAnalysis(input);
+  if (result.outcome === 'auto_completed' && result.applied) {
+    return result.applied;
+  }
+  return { awaitingReview: true, jobId: input.jobId };
+}
+
+// ============================================================
+// 內部：fetch job + persist changes
+// ============================================================
+
+async function fetchJob(jobId: string): Promise<ProcessingJob | null> {
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const unsubscribe = subscribeJob(jobId, (job) => {
+      if (resolved) return;
+      resolved = true;
+      unsubscribe();
+      resolve(job);
+    });
+    setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      unsubscribe();
+      reject(new Error('讀取 job 超時'));
+    }, 5000);
+  });
+}
 
 interface AddChangeArtifactsInput {
   sopId: string;
@@ -461,7 +611,6 @@ interface AddChangeArtifactsInput {
 async function addChangeWithMergeArtifacts(
   input: AddChangeArtifactsInput,
 ): Promise<void> {
-  // 用既有 addChange 寫入主結構，再用 setDoc merge 補進額外欄位。
   await addChange({
     sopId: input.sopId,
     changeId: input.changeId,
@@ -470,40 +619,25 @@ async function addChangeWithMergeArtifacts(
     appliedBy: input.appliedBy,
     changeIntents: input.changeIntents,
     skippedIntents: input.skippedIntents,
-  });
-
-  // 若沒有額外資料就不需再寫一次
-  if (
-    input.conflicts.length === 0 &&
-    input.completenessIssues.length === 0 &&
-    input.termMappings.length === 0
-  ) {
-    return;
-  }
-
-  const { setDoc, doc } = await import('@/services/sop');
-  const { db } = await import('@/firebase/config');
-  const ref = doc(db, `sops/${input.sopId}/changes/${input.changeId}`);
-  await setDoc(
-    ref,
-    {
-      conflicts: input.conflicts,
-      completenessIssues: input.completenessIssues,
-      ...(input.termMappings.length > 0 ? { termMappings: input.termMappings } : {}),
-      stats: {
-        totalRawIntents:
-          input.changeIntents.length +
-          input.skippedIntents.length +
-          input.conflicts.reduce((s, c) => s + c.options.length, 0),
-        consolidated: input.changeIntents.length,
-        autoApplied: input.changeIntents.filter((i) => i.auto_apply).length,
-        manuallyAccepted: 0,
-        rejected: input.skippedIntents.length,
-        conflictsResolved: 0,
-      },
+    conflicts: input.conflicts,
+    completenessIssues: input.completenessIssues,
+    termMappings: input.termMappings,
+    statsOverride: {
+      totalRawIntents:
+        input.changeIntents.length +
+        input.skippedIntents.length +
+        input.conflicts.reduce((s, c) => s + c.options.length, 0),
+      consolidated: input.changeIntents.length,
+      autoApplied: input.changeIntents.filter((i) => i.auto_apply).length,
+      manuallyAccepted: input.changeIntents.filter(
+        (i) => !i.auto_apply && i.status === 'accepted',
+      ).length,
+      rejected: input.skippedIntents.length,
+      conflictsResolved: input.conflicts.filter(
+        (c) => 'resolvedOptionIndex' in c && c.resolvedOptionIndex !== undefined,
+      ).length,
     },
-    { merge: true },
-  );
+  });
 }
 
 function dedupTermMappings(mappings: TermMapping[]): TermMapping[] {

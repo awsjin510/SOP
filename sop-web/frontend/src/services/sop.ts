@@ -225,6 +225,19 @@ export interface AddChangeInput {
   /** 跳過 / 拒絕的 intents（給 changelog 顯示用） */
   skippedIntents?: Array<{ intent: ChangeIntent; reason: string }>;
   changelogDocxUrl?: string;
+  /** W8：審核產出的衝突 / 完整性問題 / 術語對映（隨 changes 一次寫入） */
+  conflicts?: unknown[];
+  completenessIssues?: unknown[];
+  termMappings?: Array<{ vendorTerm: string; internalTerm: string }>;
+  /** W8：審核統計覆寫（沒給就用 W6 預設） */
+  statsOverride?: {
+    totalRawIntents: number;
+    consolidated: number;
+    autoApplied: number;
+    manuallyAccepted: number;
+    rejected: number;
+    conflictsResolved: number;
+  };
 }
 
 /**
@@ -279,23 +292,27 @@ export async function addVersion(input: AddVersionInput): Promise<{ versionId: s
 
 export async function addChange(input: AddChangeInput): Promise<void> {
   const ref = doc(db, `${SOPS}/${input.sopId}/changes/${input.changeId}`);
+  const stats = input.statsOverride ?? {
+    totalRawIntents:
+      input.changeIntents.length + (input.skippedIntents?.length ?? 0),
+    consolidated: input.changeIntents.length,
+    autoApplied: input.changeIntents.filter((i) => i.auto_apply).length,
+    manuallyAccepted: 0,
+    rejected: input.skippedIntents?.length ?? 0,
+    conflictsResolved: 0,
+  };
   await setDoc(ref, {
     id: input.changeId,
     fromVersion: input.fromVersion,
     toVersion: input.toVersion,
     changeIntents: input.changeIntents,
     skippedIntents: input.skippedIntents ?? [],
-    conflicts: [],
-    completenessIssues: [],
-    stats: {
-      totalRawIntents:
-        input.changeIntents.length + (input.skippedIntents?.length ?? 0),
-      consolidated: input.changeIntents.length,
-      autoApplied: input.changeIntents.filter((i) => i.auto_apply).length,
-      manuallyAccepted: 0,
-      rejected: input.skippedIntents?.length ?? 0,
-      conflictsResolved: 0,
-    },
+    conflicts: input.conflicts ?? [],
+    completenessIssues: input.completenessIssues ?? [],
+    ...(input.termMappings && input.termMappings.length > 0
+      ? { termMappings: input.termMappings }
+      : {}),
+    stats,
     changelogDocxUrl: input.changelogDocxUrl ?? '',
     createdAt: serverTimestamp(),
     appliedAt: serverTimestamp(),

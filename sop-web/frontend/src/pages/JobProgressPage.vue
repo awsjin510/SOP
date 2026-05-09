@@ -25,6 +25,11 @@ onMounted(() => {
   }
   unsubscribe = subscribeJob(jobId.value, (j) => {
     job.value = j;
+    if (j?.status === 'awaiting_review') {
+      // 審核就緒 → 自動跳到審核介面
+      void router.push({ name: 'review', params: { jobId: jobId.value } });
+      return;
+    }
     if (j?.status === 'completed' && j.result) {
       // 完成後 1.5 秒自動轉到 SOP 詳細頁
       setTimeout(() => {
