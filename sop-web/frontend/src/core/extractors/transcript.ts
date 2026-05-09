@@ -7,12 +7,19 @@ import type {
   Step,
   TroubleshootingItem,
   GlossaryTerm,
-  SourceRef,
 } from '@/core/ir/schemas';
 import { ActionSchema } from '@/core/ir/schemas';
+import {
+  renderTemplate,
+  extractJsonBlock,
+  attachSourceRefBase,
+} from '@/core/extractors/helpers';
 // Vite 的 ?raw import：把 markdown 內容當字串引入，不在 .ts 裡塞 prompt
 import systemPrompt from '@/core/prompts/transcript-system.md?raw';
 import userTemplate from '@/core/prompts/transcript-user.md?raw';
+
+// Re-export for backwards compat with tests
+export { renderTemplate, extractJsonBlock };
 
 // ============================================================
 // Public API
@@ -224,44 +231,3 @@ export class TranscriptExtractor extends BaseExtractor<
   }
 }
 
-// ============================================================
-// Pure helpers (exported for tests)
-// ============================================================
-
-export function renderTemplate(
-  template: string,
-  vars: Record<string, string>,
-): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
-    return vars[key] !== undefined ? vars[key] : match;
-  });
-}
-
-/**
- * 從 Claude 回應中萃取 ```json fenced block 的內容。
- * 容錯：若沒有 fence，回傳整段（讓 caller 嘗試 parse）；找不到合理 JSON 則回傳 null。
- */
-export function extractJsonBlock(text: string): string | null {
-  const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
-  if (fenceMatch) return fenceMatch[1]!.trim();
-
-  // fallback：找第一個 { 到對應的最後一個 }
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    return text.slice(start, end + 1);
-  }
-  return null;
-}
-
-function attachSourceRefBase(
-  raw: { location?: string; excerpt?: string; confidence?: number },
-  base: Pick<SourceRef, 'source_file' | 'extractor_type'>,
-): SourceRef {
-  return {
-    ...base,
-    ...(raw.location !== undefined ? { location: raw.location } : {}),
-    ...(raw.excerpt !== undefined ? { excerpt: raw.excerpt } : {}),
-    ...(raw.confidence !== undefined ? { confidence: raw.confidence } : {}),
-  };
-}

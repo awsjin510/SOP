@@ -22,7 +22,9 @@
     "date-fns-tz": "^3.2.0",
     "nanoid": "^5.0.9",
     "marked": "^15.0.5",
-    "dompurify": "^3.2.3"
+    "dompurify": "^3.2.3",
+    "mammoth": "^1.9.0",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

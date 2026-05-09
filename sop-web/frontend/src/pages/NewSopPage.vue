@@ -1,23 +1,34 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { nanoid } from 'nanoid';
-import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-vue-next';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Sparkles,
+  FileText,
+  Image as ImageIcon,
+  Mic,
+} from 'lucide-vue-next';
 import FileUploader from '@/components/FileUploader.vue';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 import { useAuthStore } from '@/stores/auth';
-import {
-  slugify,
-  generateFallbackSopId,
-} from '@/services/sop';
+import { slugify, generateFallbackSopId } from '@/services/sop';
 import { createJob } from '@/services/job';
-import { runCreateSopPipeline, CREATE_SOP_SUBTASKS } from '@/core/pipelines/create-sop';
+import {
+  runCreateSopPipeline,
+  CREATE_SOP_SUBTASKS,
+  classifyFile,
+  type ClassifiedFile,
+  type ClassifiedFileType,
+} from '@/core/pipelines/create-sop';
 
 const authStore = useAuthStore();
 const router = useRouter();
 
 const step = ref<1 | 2 | 3 | 4>(1);
 const files = ref<File[]>([]);
+const classifications = ref<Map<string, ClassifiedFileType>>(new Map());
 const submitting = ref(false);
 const submitError = ref<string | null>(null);
 
@@ -37,8 +48,44 @@ const meta = ref<{
   tags: '',
 });
 
-// W3 只接受訪談；如果使用者上傳多個檔案，第一個被當訪談，其他列出但不處理
-const transcriptFile = computed(() => files.value[0] ?? null);
+// 上傳新檔案時自動分類
+watch(
+  files,
+  (newFiles) => {
+    const next = new Map(classifications.value);
+    const keys = new Set<string>();
+    for (const f of newFiles) {
+      const k = fileKey(f);
+      keys.add(k);
+      if (!next.has(k)) {
+        next.set(k, classifyFile(f));
+      }
+    }
+    // 移除已不存在檔案的分類
+    for (const k of next.keys()) {
+      if (!keys.has(k)) next.delete(k);
+    }
+    classifications.value = next;
+  },
+  { immediate: true },
+);
+
+function fileKey(f: File): string {
+  return `${f.name}::${f.size}`;
+}
+
+const classifiedFiles = computed<ClassifiedFile[]>(() =>
+  files.value.map((file) => ({
+    file,
+    type: classifications.value.get(fileKey(file)) ?? classifyFile(file),
+  })),
+);
+
+const counts = computed(() => {
+  const c = { transcript: 0, document: 0, screenshot: 0 };
+  for (const cf of classifiedFiles.value) c[cf.type]++;
+  return c;
+});
 
 const sopIdPreview = computed(() => {
   const slug = slugify(meta.value.title);
@@ -55,13 +102,24 @@ const canNextFromStep3 = computed(
 function goNext(): void {
   if (step.value < 4) step.value = (step.value + 1) as 1 | 2 | 3 | 4;
 }
-
 function goPrev(): void {
   if (step.value > 1) step.value = (step.value - 1) as 1 | 2 | 3 | 4;
 }
 
+function setClassification(file: File, type: ClassifiedFileType): void {
+  const next = new Map(classifications.value);
+  next.set(fileKey(file), type);
+  classifications.value = next;
+}
+
+const typeLabels: Record<ClassifiedFileType, string> = {
+  transcript: '訪談逐字稿',
+  document: '既有文件',
+  screenshot: '操作截圖',
+};
+
 async function startProcessing(): Promise<void> {
-  if (!authStore.authUser || !transcriptFile.value) return;
+  if (!authStore.authUser || classifiedFiles.value.length === 0) return;
   submitting.value = true;
   submitError.value = null;
 
@@ -76,11 +134,10 @@ async function startProcessing(): Promise<void> {
       subtasks: [...CREATE_SOP_SUBTASKS],
     });
 
-    // 啟動 pipeline（不 await，立刻導向進度頁）
     void runCreateSopPipeline({
       jobId,
       uid,
-      transcriptFile: transcriptFile.value,
+      files: classifiedFiles.value,
       meta: {
         sopId,
         title: meta.value.title.trim(),
@@ -103,7 +160,6 @@ async function startProcessing(): Promise<void> {
         authors: [authStore.userDoc?.email ?? authStore.authUser.email ?? uid],
       },
     }).catch((err: unknown) => {
-      // pipeline 內部已寫 job.status='failed'；這裡只記錄
       console.error('[create-sop pipeline]', err);
     });
 
@@ -119,7 +175,6 @@ async function startProcessing(): Promise<void> {
   <div class="max-w-2xl mx-auto">
     <h1 class="text-2xl font-semibold text-primary-700 mb-6">建立新 SOP</h1>
 
-    <!-- 步驟指示 -->
     <ol class="flex items-center gap-2 mb-8 text-xs text-gray-500">
       <li
         v-for="(label, idx) in ['上傳素材', '確認分類', '基本資訊', '確認啟動']"
@@ -150,14 +205,14 @@ async function startProcessing(): Promise<void> {
       v-if="step === 1"
       class="bg-white rounded-lg border border-gray-200 p-6"
     >
-      <h2 class="font-semibold text-primary-700 mb-3">步驟 1 / 4：上傳訪談逐字稿</h2>
+      <h2 class="font-semibold text-primary-700 mb-3">步驟 1 / 4：上傳素材</h2>
       <p class="text-sm text-gray-600 mb-4">
-        W3 階段只支援訪談逐字稿（.txt / .md）。多素材整合留 W4。
+        支援訪談（.txt/.md）、文件（.docx/.pdf）、截圖（.png/.jpg/.webp）混合上傳。
       </p>
       <FileUploader
         :files="files"
-        :multiple="false"
-        accept=".txt,.md"
+        :multiple="true"
+        accept=".txt,.md,.docx,.pdf,.png,.jpg,.jpeg,.webp"
         @update:files="(v) => (files = v)"
       />
 
@@ -174,21 +229,58 @@ async function startProcessing(): Promise<void> {
       </div>
     </section>
 
-    <!-- Step 2: 分類確認（W3 只一種類型，純展示） -->
+    <!-- Step 2: 分類確認 -->
     <section
       v-else-if="step === 2"
       class="bg-white rounded-lg border border-gray-200 p-6"
     >
       <h2 class="font-semibold text-primary-700 mb-3">步驟 2 / 4：確認分類</h2>
       <p class="text-sm text-gray-600 mb-4">
-        W3 階段所有上傳檔案都被當作「訪談逐字稿」。多類型自動分類在 W4。
+        系統依檔名自動分類；錯了可下拉調整。
       </p>
-      <ul class="text-sm bg-gray-50 rounded-md p-3 space-y-1">
-        <li v-if="transcriptFile" class="flex items-center justify-between">
-          <span>{{ transcriptFile.name }}</span>
-          <span class="text-xs text-primary-700 font-medium">訪談逐字稿</span>
+
+      <ul class="text-sm space-y-2">
+        <li
+          v-for="cf in classifiedFiles"
+          :key="`${cf.file.name}-${cf.file.size}`"
+          class="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-md"
+        >
+          <component
+            :is="
+              cf.type === 'screenshot'
+                ? ImageIcon
+                : cf.type === 'document'
+                  ? FileText
+                  : Mic
+            "
+            class="w-4 h-4 text-gray-500 shrink-0"
+          />
+          <span class="flex-1 truncate">{{ cf.file.name }}</span>
+          <select
+            :value="cf.type"
+            class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:border-primary-500 focus:outline-none"
+            @change="
+              (e) =>
+                setClassification(
+                  cf.file,
+                  (e.target as HTMLSelectElement).value as ClassifiedFileType,
+                )
+            "
+          >
+            <option value="transcript">訪談逐字稿</option>
+            <option value="document">既有文件</option>
+            <option value="screenshot">操作截圖</option>
+          </select>
         </li>
       </ul>
+
+      <div class="mt-4 text-xs text-gray-500 flex gap-4">
+        <span>訪談 {{ counts.transcript }}</span>
+        <span>·</span>
+        <span>文件 {{ counts.document }}</span>
+        <span>·</span>
+        <span>截圖 {{ counts.screenshot }}</span>
+      </div>
 
       <div class="flex justify-between mt-6">
         <button
@@ -312,10 +404,7 @@ async function startProcessing(): Promise<void> {
     </section>
 
     <!-- Step 4: 確認啟動 -->
-    <section
-      v-else
-      class="bg-white rounded-lg border border-gray-200 p-6"
-    >
+    <section v-else class="bg-white rounded-lg border border-gray-200 p-6">
       <h2 class="font-semibold text-primary-700 mb-3">步驟 4 / 4：確認啟動</h2>
 
       <dl class="text-sm space-y-2 mb-6">
@@ -333,22 +422,28 @@ async function startProcessing(): Promise<void> {
           <dt class="w-24 text-gray-500">適用對象</dt>
           <dd>{{ meta.targetAudience }}</dd>
         </div>
-        <div v-if="meta.category" class="flex">
-          <dt class="w-24 text-gray-500">分類</dt>
-          <dd>{{ meta.category }}</dd>
-        </div>
         <div class="flex">
           <dt class="w-24 text-gray-500">難度</dt>
           <dd>{{ meta.difficulty }}</dd>
         </div>
         <div class="flex">
           <dt class="w-24 text-gray-500">素材</dt>
-          <dd>{{ transcriptFile?.name ?? '—' }}</dd>
+          <dd>
+            <span v-if="counts.transcript > 0">
+              {{ counts.transcript }} 份{{ typeLabels.transcript }}
+            </span>
+            <span v-if="counts.document > 0">
+              · {{ counts.document }} 份{{ typeLabels.document }}
+            </span>
+            <span v-if="counts.screenshot > 0">
+              · {{ counts.screenshot }} 張{{ typeLabels.screenshot }}
+            </span>
+          </dd>
         </div>
       </dl>
 
       <p class="text-xs text-gray-500 mb-4">
-        Claude 會分析訪談逐字稿產出 SOP，過程中會花費約 $0.30–$1.00（依長度）。
+        Claude 會分析多源素材、做內訓增強，預估花費 $0.50–$3.00（依素材量）。
       </p>
 
       <p
