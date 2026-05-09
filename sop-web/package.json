@@ -1,0 +1,22 @@
+{
+  "name": "sop-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SOP 內訓文件產生與更新系統 (Web 版) - workspace root",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,emu -c blue,green \"pnpm -C frontend dev\" \"pnpm emu\"",
+    "dev:web": "pnpm -C frontend dev",
+    "emu": "pnpm dlx firebase-tools emulators:start --project demo-sop-web",
+    "build": "pnpm -C frontend build && pnpm -C functions build",
+    "typecheck": "pnpm -C frontend typecheck && pnpm -C functions typecheck",
+    "test": "pnpm -C frontend test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "firebase-tools": "^13.29.0"
+  }
+}

@@ -1,0 +1,71 @@
+import type { Config } from 'tailwindcss';
+
+export default {
+  content: ['./index.html', './src/**/*.{vue,ts,tsx}'],
+  darkMode: ['selector', '[data-theme="dark"]'],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#F0F4FA',
+          100: '#D9E3F0',
+          200: '#B3C7E0',
+          300: '#85A4CC',
+          400: '#5C82B8',
+          500: '#4A7AB8',
+          600: '#2E4F85',
+          700: '#1A2B4A',
+          800: '#142139',
+          900: '#0E1828',
+        },
+        accent: {
+          50: '#F4F1FA',
+          100: '#E5DFF1',
+          200: '#CDC0E3',
+          300: '#A892CC',
+          400: '#8A6FBE',
+          500: '#6E54AC',
+          600: '#574288',
+          700: '#4A3A6E',
+          800: '#382B53',
+          900: '#241B36',
+        },
+        success: '#10B981',
+        warning: '#F59E0B',
+        danger: '#EF4444',
+      },
+      fontFamily: {
+        sans: [
+          'Inter',
+          'Noto Sans TC',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'sans-serif',
+        ],
+        mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+      },
+      borderRadius: {
+        sm: '4px',
+        md: '8px',
+        lg: '12px',
+        xl: '16px',
+      },
+      spacing: {
+        '0.5': '2px',
+        '1': '4px',
+        '2': '8px',
+        '3': '12px',
+        '4': '16px',
+        '5': '20px',
+        '6': '24px',
+        '8': '32px',
+        '10': '40px',
+        '12': '48px',
+        '16': '64px',
+      },
+    },
+  },
+  plugins: [],
+} satisfies Config;
