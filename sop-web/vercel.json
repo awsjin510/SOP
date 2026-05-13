@@ -1,0 +1,14 @@
+{
+  "buildCommand": "pnpm -C frontend build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "pnpm install",
+  "framework": null,
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 300
+    }
+  }
+}

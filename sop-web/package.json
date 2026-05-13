@@ -15,8 +15,14 @@
     "typecheck": "pnpm -C frontend typecheck && pnpm -C functions typecheck",
     "test": "pnpm -C frontend test"
   },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "firebase-admin": "^13.0.2"
+  },
   "devDependencies": {
+    "@vercel/node": "^3.2.0",
     "concurrently": "^9.1.0",
-    "firebase-tools": "^13.29.0"
+    "firebase-tools": "^13.29.0",
+    "typescript": "^5.7.2"
   }
 }
