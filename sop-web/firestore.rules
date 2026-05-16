@@ -1,0 +1,143 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================
+    // Helper functions
+    // ============================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(resource) {
+      return isAuthenticated() && resource.data.owner == request.auth.uid;
+    }
+    
+    // 預留多人擴展：未來改 isMember 即可支援團隊功能
+    function isMember(resource) {
+      return isAuthenticated() && (
+        resource.data.owner == request.auth.uid 
+        || (resource.data.members != null && request.auth.uid in resource.data.members)
+      );
+    }
+    
+    function hasRequiredFields(data, requiredFields) {
+      return data.keys().hasAll(requiredFields);
+    }
+    
+    function isValidString(field, maxLength) {
+      return field is string && field.size() <= maxLength;
+    }
+    
+    // ============================================
+    // Users
+    // ============================================
+    
+    match /users/{userId} {
+      // 只能讀寫自己的資料
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      allow create: if isAuthenticated() 
+                    && request.auth.uid == userId
+                    && hasRequiredFields(request.resource.data, 
+                                          ['uid', 'email', 'displayName', 'createdAt']);
+      
+      allow update: if isAuthenticated() 
+                    && request.auth.uid == userId
+                    // 不能改 uid 與 email
+                    && request.resource.data.uid == resource.data.uid
+                    && request.resource.data.email == resource.data.email;
+      
+      // 不允許前端刪除（要求支援聯絡）
+      allow delete: if false;
+      
+      // 通知子集合
+      match /notifications/{notificationId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        // 寫入只能透過 Cloud Functions
+        allow write: if false;
+      }
+    }
+    
+    // ============================================
+    // SOPs
+    // ============================================
+    
+    match /sops/{sopId} {
+      allow read: if isMember(resource);
+      
+      allow create: if isAuthenticated()
+                    && request.resource.data.owner == request.auth.uid
+                    && hasRequiredFields(request.resource.data, 
+                                          ['sopId', 'owner', 'title', 'createdAt']);
+      
+      allow update: if isMember(resource)
+                    // 不能改 owner
+                    && request.resource.data.owner == resource.data.owner;
+      
+      allow delete: if isOwner(resource);
+      
+      // === Versions（不可變）===
+      match /versions/{versionId} {
+        allow read: if isMember(get(/databases/$(database)/documents/sops/$(sopId)));
+        allow create: if isMember(get(/databases/$(database)/documents/sops/$(sopId)));
+        allow update: if false;  // 版本一旦寫入不可改
+        allow delete: if false;
+      }
+      
+      // === Changes（不可變）===
+      match /changes/{changeId} {
+        allow read: if isMember(get(/databases/$(database)/documents/sops/$(sopId)));
+        allow create: if isMember(get(/databases/$(database)/documents/sops/$(sopId)));
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+    
+    // ============================================
+    // Processing Jobs
+    // ============================================
+    
+    match /processing_jobs/{jobId} {
+      allow read: if isOwner(resource);
+      
+      allow create: if isAuthenticated()
+                    && request.resource.data.owner == request.auth.uid
+                    && hasRequiredFields(request.resource.data, 
+                                          ['owner', 'type', 'status', 'createdAt']);
+      
+      allow update: if isOwner(resource);
+      
+      allow delete: if isOwner(resource);
+    }
+    
+    // ============================================
+    // Usage Stats
+    // ============================================
+    
+    match /usage_stats/{statId} {
+      // 只能讀自己的，寫入由 Cloud Functions 處理
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+    
+    // ============================================
+    // Rate Limits（內部使用）
+    // ============================================
+    
+    match /rate_limits/{limitId} {
+      // 完全由 Cloud Functions 管理
+      allow read, write: if false;
+    }
+    
+    // ============================================
+    // 預設拒絕
+    // ============================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

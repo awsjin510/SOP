@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0.0",
+  "version": "1.0.0",
+  "meta": {
+    "sop_id": "ec2-provisioning",
+    "title": "EC2 啟動 SOP",
+    "category": "AWS 操作",
+    "tags": ["aws", "ec2", "新人必學"],
+    "target_audience": "新進雲端工程師 / 入職 0-3 個月",
+    "estimated_duration_minutes": 30,
+    "difficulty": "初級",
+    "authors": ["jin@cloudorange.tw"],
+    "created_at": "2026-05-09T02:30:00+08:00",
+    "updated_at": "2026-05-09T02:30:00+08:00"
+  },
+  "sections": [
+    {
+      "id": "section-prep",
+      "title": "事前準備",
+      "order": 0,
+      "description": "確認權限與環境"
+    },
+    {
+      "id": "section-launch",
+      "title": "啟動 EC2",
+      "order": 1,
+      "description": "建立並啟動 EC2 instance"
+    },
+    {
+      "id": "section-verify",
+      "title": "驗證與後續",
+      "order": 2,
+      "description": "確認啟動成功並設定監控"
+    }
+  ],
+  "steps": [
+    {
+      "step_id": "step-AbCdEf123",
+      "section_id": "section-prep",
+      "order": 0,
+      "title": "確認 AWS 權限",
+      "purpose": "在開始前確認你的 IAM 角色有 EC2 Launch 權限，避免操作到一半才發現權限不足",
+      "preconditions": [
+        "已登入 AWS Console",
+        "已切換到正確的 AWS Account"
+      ],
+      "actions": [
+        {
+          "text": "點擊右上角使用者名稱，確認當前 Account ID",
+          "screenshot_refs": []
+        },
+        {
+          "text": "前往 IAM > Roles 確認當前角色",
+          "screenshot_refs": []
+        }
+      ],
+      "expected_result": "可以看到當前 IAM 角色，並確認包含 EC2FullAccess 或對應的客製政策",
+      "common_mistakes": [
+        "Account 切換錯誤：確認 Account ID 是 prod (123456789012) 而非 dev"
+      ],
+      "tips": [
+        "可以用 AWS CLI `aws sts get-caller-identity` 快速確認當前身分"
+      ],
+      "warnings": [],
+      "estimated_duration_minutes": 3,
+      "source_refs": [
+        {
+          "source_file": "interview-mr-wang.txt",
+          "extractor_type": "transcript",
+          "location": "第 1 段",
+          "excerpt": "首先要確認權限，不然會卡住...",
+          "confidence": 0.92
+        }
+      ],
+      "needs_human_input": false,
+      "confidence": 0.92
+    },
+    {
+      "step_id": "step-XyZ789aBc",
+      "section_id": "section-launch",
+      "order": 0,
+      "title": "進入 EC2 Console 並啟動 Launch Instance",
+      "purpose": "從 Console 開始建立 instance",
+      "preconditions": [
+        "已確認權限（前一步驟）"
+      ],
+      "actions": [
+        {
+          "text": "在 AWS Console 搜尋 'EC2' 並點擊進入",
+          "screenshot_refs": ["img-001"]
+        },
+        {
+          "text": "確認 region 為 ap-northeast-1（東京）",
+          "screenshot_refs": ["img-002"]
+        },
+        {
+          "text": "點擊「Launch Instance」橘色按鈕",
+          "screenshot_refs": ["img-003"]
+        }
+      ],
+      "expected_result": "進入 Launch Instance 精靈頁面，看到「Step 1：Choose AMI」",
+      "common_mistakes": [
+        "Region 選錯：我們的服務都在 ap-northeast-1，不要使用 us-east-1"
+      ],
+      "tips": [],
+      "warnings": [],
+      "estimated_duration_minutes": 2,
+      "source_refs": [
+        {
+          "source_file": "interview-mr-wang.txt",
+          "extractor_type": "transcript",
+          "location": "第 2 段",
+          "excerpt": "進到 EC2 console，先確認 region...",
+          "confidence": 0.95
+        },
+        {
+          "source_file": "screenshot-001.png",
+          "extractor_type": "screenshot",
+          "location": "整張",
+          "excerpt": "EC2 Dashboard 截圖，顯示 Launch Instance 按鈕",
+          "confidence": 0.90
+        }
+      ],
+      "needs_human_input": false,
+      "confidence": 0.93
+    }
+  ],
+  "troubleshooting": [
+    {
+      "id": "trouble-AbC123",
+      "symptom": "Launch Instance 按鈕灰色無法點擊",
+      "cause": "IAM 權限不足，缺少 ec2:RunInstances",
+      "solution": "請聯絡 SRE 開立 EC2FullAccess 政策；或使用對應角色切換",
+      "related_step_ids": ["step-AbCdEf123"],
+      "severity": "中",
+      "source_refs": [
+        {
+          "source_file": "interview-mr-wang.txt",
+          "extractor_type": "transcript",
+          "location": "第 5 段",
+          "excerpt": "如果按鈕灰灰的，通常是權限問題...",
+          "confidence": 0.88
+        }
+      ],
+      "confidence": 0.88
+    }
+  ],
+  "glossary": [
+    {
+      "id": "term-iam",
+      "term": "IAM",
+      "definition": "Identity and Access Management，AWS 的身份與存取管理服務",
+      "aliases": ["AWS IAM"],
+      "see_also": ["term-iam-role"]
+    },
+    {
+      "id": "term-iam-role",
+      "term": "IAM Role",
+      "definition": "授權給 AWS 服務（如 EC2）暫時取得權限的機制，比 IAM User 安全",
+      "aliases": ["IAM 角色"],
+      "see_also": []
+    }
+  ],
+  "checklists": [
+    {
+      "id": "checklist-pre-launch",
+      "title": "啟動前 Checklist",
+      "purpose": "啟動 EC2 前必須確認的項目",
+      "items": [
+        { "text": "確認 AWS Account ID", "step_ref": "step-AbCdEf123" },
+        { "text": "確認 IAM 角色", "step_ref": "step-AbCdEf123" },
+        { "text": "確認 Region 為 ap-northeast-1", "step_ref": "step-XyZ789aBc" }
+      ]
+    }
+  ],
+  "appendix": {
+    "references": [
+      "AWS EC2 官方文件：https://docs.aws.amazon.com/ec2/",
+      "公司內部 AWS 操作規範：confluence.cloudorange.tw/aws-ops"
+    ],
+    "related_sops": [
+      "vpc-setup",
+      "security-group-best-practice"
+    ]
+  }
+}

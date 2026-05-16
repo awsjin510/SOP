@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cloudorange.tw/schemas/change-intent.json",
+  "title": "SOP Change Intent",
+  "description": "更新 SOP 時的變更意圖（AI 抽取自更新素材）",
+  "type": "object",
+  "required": ["intent_id", "type", "target", "description", "source_refs", "confidence"],
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "description": "唯一 ID（nanoid）"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "add_step",
+        "modify_step",
+        "remove_step",
+        "reorder_step",
+        "add_troubleshooting",
+        "modify_troubleshooting",
+        "remove_troubleshooting",
+        "add_glossary",
+        "modify_glossary",
+        "modify_meta",
+        "replace_screenshot",
+        "add_warning",
+        "add_tip"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "description": "變更目標（要動的對象）",
+      "properties": {
+        "step_id": { "type": "string" },
+        "trouble_id": { "type": "string" },
+        "term_id": { "type": "string" },
+        "section_id": { "type": "string" },
+        "field": {
+          "type": "string",
+          "description": "對 modify 類型，指明改的是哪個欄位"
+        }
+      }
+    },
+    "description": {
+      "type": "string",
+      "description": "人類可讀的變更描述"
+    },
+    "before": {
+      "type": "string",
+      "description": "原本的內容（從現有 IR 取）"
+    },
+    "after": {
+      "type": "string",
+      "description": "變更後的內容"
+    },
+    "diff": {
+      "type": "string",
+      "description": "unified diff 格式（顯示用）"
+    },
+    "rationale": {
+      "type": "string",
+      "description": "為什麼要這個變更（從素材中推斷）"
+    },
+    "impact": {
+      "type": "object",
+      "properties": {
+        "affected_steps": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "affected_sections": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "needs_screenshot_update": { "type": "boolean" },
+        "breaking_change": { "type": "boolean" },
+        "needs_retraining": { "type": "boolean" }
+      }
+    },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "description": "支持此變更的素材依據（多個來源 = 多源印證）",
+      "items": {
+        "type": "object",
+        "required": ["source_file", "extractor_type"],
+        "properties": {
+          "source_file": { "type": "string" },
+          "extractor_type": {
+            "type": "string",
+            "enum": ["change_list", "text", "pdf", "screenshot"]
+          },
+          "location": { "type": "string" },
+          "excerpt": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "綜合信心評分"
+    },
+    "auto_apply": {
+      "type": "boolean",
+      "description": "是否可自動套用（高信心 + 低風險）"
+    },
+    "needs_review": {
+      "type": "boolean",
+      "default": true
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "accepted", "rejected", "modified", "skipped"],
+      "default": "pending"
+    },
+    "user_modification": {
+      "type": "object",
+      "description": "使用者編輯後的內容（status=modified 時）",
+      "properties": {
+        "after": { "type": "string" },
+        "modified_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
