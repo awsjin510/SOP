@@ -1,0 +1,72 @@
+[
+  {
+    "intent_id": "intent-aaaa1111",
+    "type": "modify_step",
+    "target": {
+      "step_id": "step-XyZ789aBc",
+      "field": "actions"
+    },
+    "description": "補充 Security Group IP CIDR 與出站規則說明",
+    "before": "開放 22 port 給堡壘機",
+    "after": "開放 22 port 給堡壘機 IP（10.0.1.0/24），出站規則保持預設",
+    "diff": "- 開放 22 port 給堡壘機\n+ 開放 22 port 給堡壘機 IP（10.0.1.0/24）\n+ 出站規則保持預設",
+    "rationale": "現有描述太籠統，新人不知道要填哪個 CIDR；也沒提到出站規則",
+    "impact": {
+      "affected_steps": ["step-XyZ789aBc"],
+      "affected_sections": ["section-launch"],
+      "needs_screenshot_update": true,
+      "breaking_change": false,
+      "needs_retraining": false
+    },
+    "source_refs": [
+      {
+        "source_file": "modifications-2026-05-09.docx",
+        "extractor_type": "change_list",
+        "location": "表格第 3 行",
+        "excerpt": "step-3 SG 設定要補充堡壘機 IP CIDR",
+        "confidence": 0.95
+      },
+      {
+        "source_file": "meeting-notes-2026-05-08.txt",
+        "extractor_type": "text",
+        "location": "決議第 2 點",
+        "excerpt": "決議：SG 入站規則改為堡壘機 IP，出站規則保持預設",
+        "confidence": 0.85
+      }
+    ],
+    "confidence": 0.92,
+    "auto_apply": false,
+    "needs_review": true,
+    "status": "pending"
+  },
+  {
+    "intent_id": "intent-bbbb2222",
+    "type": "add_troubleshooting",
+    "target": {
+      "section_id": "section-launch"
+    },
+    "description": "新增 SSO Session 過期的 troubleshooting",
+    "after": "症狀：操作中突然被登出\n原因：Session 預設 8 小時過期\n解法：重新登入 SSO",
+    "rationale": "團隊多次回報這個問題，但 SOP 沒有記錄",
+    "impact": {
+      "affected_steps": [],
+      "affected_sections": ["section-launch"],
+      "needs_screenshot_update": false,
+      "breaking_change": false,
+      "needs_retraining": false
+    },
+    "source_refs": [
+      {
+        "source_file": "meeting-notes-2026-05-08.txt",
+        "extractor_type": "text",
+        "location": "問題回報第 1 點",
+        "excerpt": "Session 過期是常見問題，要寫進 SOP",
+        "confidence": 0.90
+      }
+    ],
+    "confidence": 0.90,
+    "auto_apply": false,
+    "needs_review": true,
+    "status": "pending"
+  }
+]
