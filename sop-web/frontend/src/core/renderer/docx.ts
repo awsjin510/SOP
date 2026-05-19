@@ -362,9 +362,6 @@ export async function renderDocx(
             color: COLORS.PRIMARY,
             font: FONT_HEADING,
           }),
-          ...(step.needs_human_input
-            ? [makeText('  ⚠️ 待確認', { color: COLORS.WARNING, bold: true })]
-            : []),
         ],
       }),
     );
@@ -482,20 +479,6 @@ export async function renderDocx(
     if (step.common_mistakes && step.common_mistakes.length > 0) {
       out.push(para('新人常犯', { bold: true, color: COLORS.DANGER }));
       out.push(...bulletList(step.common_mistakes));
-    }
-
-    if (step.needs_human_input && step.human_input_reason) {
-      out.push(
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [
-            makeText(`⚠️ 待人工確認：${step.human_input_reason}`, {
-              italic: true,
-              color: COLORS.WARNING,
-            }),
-          ],
-        }),
-      );
     }
 
     return out;

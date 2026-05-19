@@ -393,7 +393,7 @@ export async function renderPdf(
     ensureSpace(60);
     // 卡片左側 accent bar
     const cardTop = y;
-    drawWrapped(step.title + (step.needs_human_input ? '   ⚠️ 待確認' : ''), {
+    drawWrapped(step.title, {
       size: 14,
       bold: true,
       color: color(RGB.PRIMARY),

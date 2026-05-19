@@ -89,8 +89,7 @@ export function renderMarkdown(ir: IR): string {
 }
 
 function renderStep(step: Step, lines: string[]): void {
-  const flag = step.needs_human_input ? ' ⚠️' : '';
-  lines.push(`### ${step.title}${flag}`);
+  lines.push(`### ${step.title}`);
   lines.push('');
 
   if (step.purpose) {
@@ -149,10 +148,6 @@ function renderStep(step: Step, lines: string[]): void {
     lines.push('');
   }
 
-  if (step.needs_human_input && step.human_input_reason) {
-    lines.push(`> ⚠️ 待人工確認：${step.human_input_reason}`);
-    lines.push('');
-  }
 }
 
 function renderTrouble(t: TroubleshootingItem, lines: string[]): void {
