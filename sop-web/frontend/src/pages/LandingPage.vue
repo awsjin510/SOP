@@ -1,76 +1,91 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { FileUp, Sparkles, GitBranch } from 'lucide-vue-next';
-import { useAuthStore } from '@/stores/auth';
-import LoadingSpinner from '@/components/LoadingSpinner.vue';
+import { FileText, Upload, Download, KeyRound } from 'lucide-vue-next';
+import { hasStoredKey } from '@/services/byok-key';
 
-const authStore = useAuthStore();
 const router = useRouter();
+const byokReady = computed(() => hasStoredKey());
 
-async function handleSignIn(): Promise<void> {
-  try {
-    await authStore.signIn();
-    await router.push({ name: 'dashboard' });
-  } catch {
-    // 錯誤訊息已寫入 store，由模板顯示
-  }
+async function goNew(): Promise<void> {
+  await router.push({ name: 'new' });
+}
+
+async function goSettings(): Promise<void> {
+  await router.push({ name: 'settings' });
 }
 </script>
 
 <template>
-  <div class="w-full max-w-3xl py-12">
-    <section class="text-center mb-16">
-      <h1 class="text-4xl sm:text-5xl font-bold text-primary-700 mb-4">
-        SOP 內訓文件系統
-      </h1>
-      <p class="text-lg text-gray-600 mb-8 leading-relaxed">
-        把訪談、文件、截圖變成新人能讀懂的內訓 SOP，<br />
-        並支援版本更新與變更追蹤。
-      </p>
+  <div class="max-w-3xl mx-auto px-6 py-16">
+    <h1 class="text-4xl font-bold text-primary-700 mb-3">
+      SOP 內訓文件產生系統
+    </h1>
+    <p class="text-gray-600 mb-8">
+      把訪談稿、文件、截圖丟進來，AI 幫你整理成標準作業流程。下載 Word / PDF / Markdown / SOP.json。
+    </p>
 
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+      <div class="bg-white rounded-lg border border-gray-200 p-5">
+        <Upload class="w-6 h-6 text-primary-700 mb-2" />
+        <h3 class="font-semibold text-sm mb-1">上傳素材</h3>
+        <p class="text-xs text-gray-600">訪談逐字稿、Word/PDF 文件、操作截圖</p>
+      </div>
+      <div class="bg-white rounded-lg border border-gray-200 p-5">
+        <FileText class="w-6 h-6 text-primary-700 mb-2" />
+        <h3 class="font-semibold text-sm mb-1">AI 自動抽取</h3>
+        <p class="text-xs text-gray-600">用 Claude 把素材轉成結構化 SOP</p>
+      </div>
+      <div class="bg-white rounded-lg border border-gray-200 p-5">
+        <Download class="w-6 h-6 text-primary-700 mb-2" />
+        <h3 class="font-semibold text-sm mb-1">即時下載</h3>
+        <p class="text-xs text-gray-600">Word / PDF / Markdown / SOP.json 四種格式</p>
+      </div>
+    </div>
+
+    <div
+      v-if="!byokReady"
+      class="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-6 text-sm"
+    >
+      <div class="flex items-start gap-3">
+        <KeyRound class="w-5 h-5 text-yellow-700 shrink-0 mt-0.5" />
+        <div class="flex-1">
+          <p class="font-medium text-yellow-900 mb-1">尚未設定 Anthropic API key</p>
+          <p class="text-yellow-800 mb-2">
+            本工具直接從你的瀏覽器呼叫 Claude，請先到設定貼上自己的 API key。
+          </p>
+          <button
+            type="button"
+            class="text-sm font-medium text-yellow-900 underline hover:text-yellow-700"
+            @click="goSettings"
+          >
+            前往設定 →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-primary-700 text-white font-medium hover:bg-primary-800 transition-colors disabled:opacity-60"
-        :disabled="authStore.loading"
-        @click="handleSignIn"
+        class="px-6 py-3 rounded-md bg-primary-700 text-white font-medium hover:bg-primary-800 transition-colors disabled:opacity-50"
+        :disabled="!byokReady"
+        @click="goNew"
       >
-        <LoadingSpinner v-if="authStore.loading" label="" size="sm" />
-        <span v-else>使用 Google 登入</span>
+        開始新建 SOP
       </button>
-
-      <p
-        v-if="authStore.error"
-        class="mt-4 text-sm text-danger"
-        role="alert"
+      <button
+        type="button"
+        class="px-4 py-3 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+        @click="goSettings"
       >
-        登入失敗：{{ authStore.error }}
-      </p>
-    </section>
+        個人設定
+      </button>
+    </div>
 
-    <section class="grid gap-6 sm:grid-cols-3">
-      <article class="bg-white rounded-lg p-6 border border-gray-200">
-        <FileUp class="w-8 h-8 text-primary-500 mb-3" />
-        <h2 class="font-semibold text-primary-700 mb-2">上傳素材</h2>
-        <p class="text-sm text-gray-600">
-          訪談逐字稿、既有文件、操作截圖、修改清單，皆可混合輸入。
-        </p>
-      </article>
-
-      <article class="bg-white rounded-lg p-6 border border-gray-200">
-        <Sparkles class="w-8 h-8 text-accent-500 mb-3" />
-        <h2 class="font-semibold text-primary-700 mb-2">智慧整合</h2>
-        <p class="text-sm text-gray-600">
-          自動分流抽取、合併 IR、用新人視角補強內訓內容。
-        </p>
-      </article>
-
-      <article class="bg-white rounded-lg p-6 border border-gray-200">
-        <GitBranch class="w-8 h-8 text-primary-500 mb-3" />
-        <h2 class="font-semibold text-primary-700 mb-2">持續更新</h2>
-        <p class="text-sm text-gray-600">
-          step_id 跨版本穩定，變更可追溯，差異自動產生 changelog。
-        </p>
-      </article>
-    </section>
+    <p class="text-xs text-gray-500 mt-12">
+      ⓘ 本工具不會在雲端保存你的資料。所有處理都在你的瀏覽器中進行，要保留結果請主動下載
+      Word / PDF / Markdown，或下載 SOP.json 以便日後載回繼續編輯。
+    </p>
   </div>
 </template>

@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 
-// `VITE_BASE_PATH` 由 GH Pages workflow 設成 '/SOP/'；Firebase Hosting / 本地 dev 維持 '/'。
+// `VITE_BASE_PATH` 由 GH Pages workflow 設成 '/SOP/'；本地 dev 維持 '/'。
 const basePath = process.env.VITE_BASE_PATH ?? '/';
 
 export default defineConfig({
@@ -27,7 +27,6 @@ export default defineConfig({
         // 名稱以 vendor- 前綴方便 hosting/CDN 設快取規則。
         manualChunks: (id: string): string | undefined => {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('firebase')) return 'vendor-firebase';
           if (id.includes('docx')) return 'vendor-docx';
           if (id.includes('pdf-lib') || id.includes('@pdf-lib')) return 'vendor-pdflib';
           if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';

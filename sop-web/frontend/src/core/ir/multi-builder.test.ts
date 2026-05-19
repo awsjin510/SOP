@@ -1,11 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('@/firebase/config', () => ({
-  auth: {},
-  db: {},
-  storage: {},
-  functions: {},
-}));
 vi.mock('@/services/claude', () => ({
   callClaude: vi.fn(),
   DEFAULT_MODEL: 'claude-opus-4-7',

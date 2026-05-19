@@ -1,7 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Upload, FileText, X } from 'lucide-vue-next';
-import { validateFile, MAX_FILE_BYTES } from '@/services/storage';
+
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.txt', '.md', '.docx', '.pdf', '.png', '.jpg', '.jpeg', '.webp',
+]);
+
+function validateFile(file: File): { valid: boolean; reason?: string } {
+  if (file.size > MAX_FILE_BYTES) {
+    return { valid: false, reason: `檔案超過 ${MAX_FILE_BYTES / 1024 / 1024}MB 上限` };
+  }
+  const lower = file.name.toLowerCase();
+  const ext = lower.slice(lower.lastIndexOf('.'));
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
+    return { valid: false, reason: `不支援的副檔名：${ext}` };
+  }
+  return { valid: true };
+}
 
 interface Props {
   multiple?: boolean;
