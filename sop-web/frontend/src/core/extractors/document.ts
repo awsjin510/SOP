@@ -13,6 +13,7 @@ import {
   renderTemplate,
   extractJsonBlock,
   attachSourceRefBase,
+  formatJsonParseError,
 } from '@/core/extractors/helpers';
 import systemPrompt from '@/core/prompts/document-system.md?raw';
 import userTemplate from '@/core/prompts/document-user.md?raw';
@@ -125,7 +126,7 @@ export class DocumentExtractor extends BaseExtractor<
 
     const response = await this.callClaude({
       system: systemPrompt,
-      max_tokens: 8192,
+      max_tokens: 16384,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
@@ -175,9 +176,7 @@ export class DocumentExtractor extends BaseExtractor<
     try {
       parsed = JSON.parse(json);
     } catch (err) {
-      throw new Error(
-        `JSON 解析失敗：${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new Error(formatJsonParseError(rawText, json, err));
     }
     const result = RawDocumentOutputSchema.safeParse(parsed);
     if (!result.success) {

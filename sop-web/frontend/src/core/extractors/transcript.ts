@@ -13,6 +13,7 @@ import {
   renderTemplate,
   extractJsonBlock,
   attachSourceRefBase,
+  formatJsonParseError,
 } from '@/core/extractors/helpers';
 // Vite 的 ?raw import：把 markdown 內容當字串引入，不在 .ts 裡塞 prompt
 import systemPrompt from '@/core/prompts/transcript-system.md?raw';
@@ -124,7 +125,7 @@ export class TranscriptExtractor extends BaseExtractor<
 
     const response = await this.callClaude({
       system: systemPrompt,
-      max_tokens: 8192,
+      max_tokens: 16384,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
@@ -146,9 +147,7 @@ export class TranscriptExtractor extends BaseExtractor<
     try {
       parsed = JSON.parse(json);
     } catch (err) {
-      throw new Error(
-        `JSON 解析失敗：${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new Error(formatJsonParseError(rawText, json, err));
     }
     const result = RawTranscriptOutputSchema.safeParse(parsed);
     if (!result.success) {
