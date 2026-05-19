@@ -7,12 +7,6 @@ vi.mock('@/services/claude', () => ({
   FAST_MODEL: 'claude-haiku-4-5-20251001',
 }));
 
-vi.mock('@/firebase/config', () => ({
-  auth: {},
-  db: {},
-  storage: {},
-  functions: {},
-}));
 
 import {
   TranscriptExtractor,

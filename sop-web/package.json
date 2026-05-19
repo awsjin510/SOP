@@ -8,15 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "concurrently -n web,emu -c blue,green \"pnpm -C frontend dev\" \"pnpm emu\"",
-    "dev:web": "pnpm -C frontend dev",
-    "emu": "pnpm dlx firebase-tools emulators:start --project demo-sop-web",
-    "build": "pnpm -C frontend build && pnpm -C functions build",
-    "typecheck": "pnpm -C frontend typecheck && pnpm -C functions typecheck",
+    "dev": "pnpm -C frontend dev",
+    "build": "pnpm -C frontend build",
+    "typecheck": "pnpm -C frontend typecheck",
     "test": "pnpm -C frontend test"
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.0",
-    "firebase-tools": "^13.29.0"
   }
 }

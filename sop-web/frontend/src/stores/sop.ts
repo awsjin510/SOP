@@ -1,41 +1,29 @@
 import { defineStore } from 'pinia';
-import type { Unsubscribe } from 'firebase/firestore';
-import { subscribeUserSops } from '@/services/sop';
-import type { SopDoc } from '@/types/firestore';
+import type { SopState } from '@/services/sop';
 
-interface SopState {
-  sops: SopDoc[];
-  loading: boolean;
-  unsubscribe: Unsubscribe | null;
+/**
+ * 目前正在編輯的 SOP（單一 in-memory 物件）。
+ * 重新整理頁面 = 清空（除非使用者下載 SOP.json 自己保留）。
+ */
+interface CurrentSopState {
+  current: SopState | null;
 }
 
 export const useSopStore = defineStore('sop', {
-  state: (): SopState => ({
-    sops: [],
-    loading: false,
-    unsubscribe: null,
+  state: (): CurrentSopState => ({
+    current: null,
   }),
 
   getters: {
-    count: (state): number => state.sops.length,
+    hasSop: (state): boolean => state.current !== null,
   },
 
   actions: {
-    bind(uid: string): void {
-      this.unbind();
-      this.loading = true;
-      this.unsubscribe = subscribeUserSops(uid, (list) => {
-        this.sops = list;
-        this.loading = false;
-      });
+    setCurrent(sop: SopState): void {
+      this.current = sop;
     },
-
-    unbind(): void {
-      if (this.unsubscribe) {
-        this.unsubscribe();
-        this.unsubscribe = null;
-      }
-      this.sops = [];
+    clear(): void {
+      this.current = null;
     },
   },
 });

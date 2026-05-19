@@ -1,41 +1,85 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { buildSopJsonBlob, parseSopJson, slugify } from './sop';
+import type { SopState } from './sop';
+import type { IR } from '@/core/ir/schemas';
 
-// Avoid initialising firebase in the test
-vi.mock('@/firebase/config', () => ({
-  auth: {},
-  db: {},
-  storage: {},
-  functions: {},
-}));
+function makeIr(): IR {
+  return {
+    schema_version: '1.0.0',
+    version: '1.0.0',
+    meta: {
+      sop_id: 'sop-test',
+      title: '測試 SOP',
+      target_audience: '測試人員',
+      authors: ['tester'],
+      created_at: '2026-05-19T00:00:00+08:00',
+      updated_at: '2026-05-19T00:00:00+08:00',
+    },
+    sections: [
+      { id: 'main', title: '主要步驟', order: 1 },
+    ],
+    steps: [
+      {
+        step_id: 'step-aaa',
+        section_id: 'main',
+        title: '示範步驟',
+        actions: [{ text: '執行 echo hello' }],
+        source_refs: [
+          {
+            source_file: 'demo.txt',
+            extractor_type: 'transcript',
+            location: 'line 1',
+            confidence: 0.9,
+          },
+        ],
+      },
+    ],
+    troubleshooting: [],
+    glossary: [],
+  };
+}
 
-import { slugify, generateFallbackSopId } from './sop';
+describe('SOP.json round-trip', () => {
+  it('buildSopJsonBlob + parseSopJson preserves IR & metadata', async () => {
+    const before: SopState = {
+      ir: makeIr(),
+      metadata: {
+        title: '測試 SOP',
+        targetAudience: '測試人員',
+        sourceFiles: [
+          { name: 'demo.txt', type: 'transcript', extractedAt: '2026-05-19T00:00:00Z' },
+        ],
+      },
+    };
+    const blob = buildSopJsonBlob(before);
+    expect(blob.type).toBe('application/json');
 
-describe('slugify', () => {
-  it('converts to kebab-case ascii', () => {
-    expect(slugify('EC2 Provisioning')).toBe('ec2-provisioning');
+    const file = new File([blob], 'demo.sop.json', { type: 'application/json' });
+    const after = await parseSopJson(file);
+
+    expect(after.ir.meta.sop_id).toBe(before.ir.meta.sop_id);
+    expect(after.ir.steps).toHaveLength(1);
+    expect(after.ir.steps[0]?.step_id).toBe('step-aaa');
+    expect(after.metadata.title).toBe('測試 SOP');
+    expect(after.metadata.sourceFiles[0]?.name).toBe('demo.txt');
   });
 
-  it('strips non-ascii characters (Chinese title yields empty)', () => {
-    expect(slugify('啟動 EC2')).toBe('ec2');
+  it('parseSopJson rejects non-JSON', async () => {
+    const file = new File(['not json'], 'bad.json', { type: 'application/json' });
+    await expect(parseSopJson(file)).rejects.toThrow(/合法的 JSON/);
   });
 
-  it('returns empty for purely Chinese title', () => {
-    expect(slugify('啟動測試')).toBe('');
-  });
-
-  it('collapses multiple separators', () => {
-    expect(slugify('foo   bar / baz')).toBe('foo-bar-baz');
+  it('parseSopJson rejects wrong schema', async () => {
+    const file = new File(['{"foo":1}'], 'bad.json', { type: 'application/json' });
+    await expect(parseSopJson(file)).rejects.toThrow(/格式不符/);
   });
 });
 
-describe('generateFallbackSopId', () => {
-  it('prefixes nanoid with sop-', () => {
-    const id = generateFallbackSopId(() => 'abc12345');
-    expect(id).toBe('sop-abc12345');
+describe('slugify', () => {
+  it('replaces unsafe chars', () => {
+    expect(slugify('My SOP / Test * Doc')).toBe('My-SOP-Test-Doc');
   });
-
-  it('produces ids matching the schema regex', () => {
-    const id = generateFallbackSopId(() => 'abc12345');
-    expect(id).toMatch(/^[a-z0-9-]+$/);
+  it('falls back when result would be empty', () => {
+    expect(slugify('////', 'fallback')).toBe('fallback');
   });
 });

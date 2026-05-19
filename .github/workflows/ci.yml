@@ -33,18 +33,10 @@ jobs:
         working-directory: sop-web/frontend
         run: pnpm typecheck
 
-      - name: Typecheck — functions
-        working-directory: sop-web/functions
-        run: pnpm typecheck
-
       - name: Unit tests — frontend
         working-directory: sop-web/frontend
         run: pnpm test
 
       - name: Build — frontend
         working-directory: sop-web/frontend
-        run: pnpm build
-
-      - name: Build — functions
-        working-directory: sop-web/functions
         run: pnpm build

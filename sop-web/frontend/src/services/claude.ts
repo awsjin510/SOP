@@ -1,28 +1,23 @@
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/firebase/config';
 import { getStoredKey } from '@/services/byok-key';
 import { callClaudeBYOK } from '@/services/claude-byok';
 import type { ClaudeRequest, ClaudeResponse } from '@/core/types/extractor';
 
 /**
- * 雙模式 Claude 呼叫：
- * - 若使用者在設定頁存了自己的 API key（BYOK），直接從瀏覽器呼叫 Anthropic
- * - 否則走 Cloud Function `claudeProxy`（需後端 ANTHROPIC_API_KEY secret）
+ * 唯一的 Claude 入口：BYOK 直連。沒設 key 就拋錯，提示去 Settings 設定。
+ *
+ * MVP 拔除了 Cloud Functions 代理（claudeProxy），所有呼叫都要使用者自己的
+ * Anthropic API key。Key 存在 localStorage（services/byok-key.ts）。
  */
-const claudeProxyFn = httpsCallable<ClaudeRequest, ClaudeResponse>(
-  functions,
-  'claudeProxy',
-);
-
 export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
-  const byokKey = getStoredKey();
-  if (byokKey) {
-    return callClaudeBYOK(req, byokKey);
+  const key = getStoredKey();
+  if (!key) {
+    throw new Error(
+      '尚未設定 Anthropic API key。請到「個人設定」貼上 sk-ant-... key 後再試。',
+    );
   }
-  const result = await claudeProxyFn(req);
-  return result.data;
+  return callClaudeBYOK(req, key);
 }
 
-/** 預設模型：複雜抽取用 Opus，簡單分類請改傳 model 參數 */
+/** 預設模型：複雜抽取用 Opus，分類/輕量呼叫請改傳 model 參數 */
 export const DEFAULT_MODEL = 'claude-opus-4-7';
 export const FAST_MODEL = 'claude-haiku-4-5-20251001';
