@@ -29,6 +29,19 @@ async function bootstrap(): Promise<void> {
   await authStore.bind();
 
   app.use(router);
+
+  // GH Pages SPA fallback: 404.html 把原本路徑存到 sessionStorage，
+  // 我們在 mount 後 replace 回去（router 啟動時 base 路徑已經被吃掉，這裡只 push 子路徑）
+  if (typeof window !== 'undefined') {
+    const redirect = sessionStorage.getItem('ghpages_redirect');
+    if (redirect) {
+      sessionStorage.removeItem('ghpages_redirect');
+      const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+      const target = base && redirect.startsWith(base) ? redirect.slice(base.length) : redirect;
+      await router.replace(target || '/');
+    }
+  }
+
   app.mount('#app');
 }
 

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOP 內訓文件系統</title>
+    <script>
+      // GitHub Pages SPA fallback: 把當前路徑塞進 sessionStorage，重導回 SPA 根目錄，
+      // SPA 啟動時讀出來再 router.replace 過去。比起把 404.html 當成 index.html 的
+      // 鏡像，這個方案不會有「整個 SPA 載入兩次」的雙重 init 問題。
+      (function () {
+        var l = window.location;
+        sessionStorage.setItem('ghpages_redirect', l.pathname + l.search + l.hash);
+        l.replace(l.protocol + '//' + l.host + '/SOP/');
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -2,7 +2,11 @@ import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 
+// `VITE_BASE_PATH` 由 GH Pages workflow 設成 '/SOP/'；Firebase Hosting / 本地 dev 維持 '/'。
+const basePath = process.env.VITE_BASE_PATH ?? '/';
+
 export default defineConfig({
+  base: basePath,
   plugins: [vue()],
   resolve: {
     alias: {
