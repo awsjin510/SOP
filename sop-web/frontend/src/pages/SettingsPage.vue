@@ -7,6 +7,12 @@ import {
   maskKey,
 } from '@/services/byok-key';
 import { callClaude } from '@/services/claude';
+import {
+  getPreferredModel,
+  setPreferredModel,
+  MODEL_CATALOG,
+  type ModelId,
+} from '@/services/model-pref';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 
 const byokKey = ref<string>('');
@@ -15,6 +21,16 @@ const showKey = ref(false);
 const saveMsg = ref<string | null>(null);
 
 const isReady = computed(() => storedKey.value !== null);
+
+// ── 預設模型 ──
+const selectedModel = ref<ModelId>(getPreferredModel());
+const modelSavedMsg = ref<string | null>(null);
+
+function onSelectModel(): void {
+  setPreferredModel(selectedModel.value);
+  modelSavedMsg.value = '✓ 已更新預設模型';
+  setTimeout(() => (modelSavedMsg.value = null), 2500);
+}
 
 function save(): void {
   const v = byokKey.value.trim();
@@ -158,6 +174,52 @@ async function test(): Promise<void> {
         :class="saveMsg.startsWith('✓') ? 'text-success' : 'text-danger'"
       >
         {{ saveMsg }}
+      </p>
+    </section>
+
+    <!-- 預設模型 -->
+    <section class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-primary-700 mb-2">預設 AI 模型</h2>
+      <p class="text-sm text-gray-600 mb-4">
+        抽取 SOP 時用哪個 Claude 模型。從 Opus 切到 Sonnet 可省約 5 倍成本，
+        切到 Haiku 約省 20 倍但抽取細節可能會掉。
+      </p>
+
+      <div class="space-y-3">
+        <label
+          v-for="m in MODEL_CATALOG"
+          :key="m.id"
+          class="flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors hover:bg-gray-50"
+          :class="
+            selectedModel === m.id
+              ? 'border-primary-700 bg-primary-50/40'
+              : 'border-gray-200'
+          "
+        >
+          <input
+            v-model="selectedModel"
+            type="radio"
+            :value="m.id"
+            class="mt-1 accent-primary-700"
+            @change="onSelectModel"
+          />
+          <div class="flex-1">
+            <div class="flex items-baseline justify-between gap-2 flex-wrap">
+              <span class="font-medium text-sm text-primary-700">{{ m.label }}</span>
+              <span class="text-xs font-mono text-gray-500">
+                ${{ m.pricePerMTokInput }} / ${{ m.pricePerMTokOutput }} per MTok
+              </span>
+            </div>
+            <p class="text-xs text-gray-600 mt-0.5">{{ m.description }}</p>
+          </div>
+        </label>
+      </div>
+
+      <p
+        v-if="modelSavedMsg"
+        class="mt-3 text-xs text-success"
+      >
+        {{ modelSavedMsg }}
       </p>
     </section>
 

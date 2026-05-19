@@ -28,7 +28,7 @@ export function extractJsonBlock(text: string): string | null {
 }
 
 /**
- * 給 JSON.parse 失敗的場景產生人話錯誤訊息：偵測截斷 + 提示重試。
+ * 給 JSON.parse 失敗的場景產生人話錯誤訊息：偵測截斷 + 顯示回應尾巴 + 提示重試。
  */
 export function formatJsonParseError(
   rawText: string,
@@ -38,7 +38,6 @@ export function formatJsonParseError(
   const errMsg = err instanceof Error ? err.message : String(err);
   const hints: string[] = [];
 
-  // 截斷偵測：常見訊息
   const truncationSignals = [
     'Unexpected end of JSON input',
     'Expected',
@@ -48,14 +47,20 @@ export function formatJsonParseError(
 
   if (looksTruncated) {
     hints.push(
-      'Claude 的回應可能被截斷（原素材太長，超出單次輸出上限）。建議：',
-      '  ① 把素材檔切小（單檔 < 8000 字最穩）',
-      '  ② 或在 Settings 切到 Sonnet/Haiku 重試（產量較大）',
+      '可能原因：',
+      '  ① 回應被截斷（單次輸出上限） — 試試切小素材檔 / 換 Sonnet / 縮短訪談',
+      '  ② Claude 產出格式錯誤的 JSON — 重試一次通常會好',
     );
   }
 
-  const len = jsonStr.length;
-  hints.push(`（回應 JSON 共 ${len} 字元，原始文字 ${rawText.length} 字元）`);
+  const tail = jsonStr.slice(-200);
+  hints.push(
+    `回應結尾（最後 200 字元）：`,
+    '----',
+    tail,
+    '----',
+    `（回應 JSON 共 ${jsonStr.length} 字元，原始文字 ${rawText.length} 字元）`,
+  );
 
   return `JSON 解析失敗：${errMsg}\n${hints.join('\n')}`;
 }
