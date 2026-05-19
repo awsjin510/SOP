@@ -9,7 +9,7 @@ import { Settings, Home } from 'lucide-vue-next';
         :to="{ name: 'landing' }"
         class="font-semibold text-primary-700 text-lg tracking-tight"
       >
-        SOP 內訓系統
+        SOP 智能產出平台
       </RouterLink>
 
       <div class="flex items-center gap-4">
