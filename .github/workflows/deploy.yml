@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   deploy:
@@ -43,25 +44,23 @@ jobs:
           VITE_USE_EMULATOR: 'false'
         run: pnpm build
 
-      - name: Write service account key
-        env:
-          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+      - name: Deploy to Firebase Hosting (live channel)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: sop-web-prod
+          channelId: live
+          entryPoint: sop-web
 
-      - name: Install Firebase CLI
-        run: npm install -g firebase-tools@13
-
-      - name: Deploy hosting + Firestore rules + Storage rules
+      - name: Deploy Firestore & Storage rules
         working-directory: sop-web
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/sa.json"
+          npm install -g firebase-tools@13
           firebase deploy \
-            --only hosting,firestore:rules,storage \
+            --only firestore:rules,storage \
             --project sop-web-prod \
             --non-interactive
-
-      - name: Print live URL
-        run: |
-          echo "✓ Deployed → https://sop-web-prod.web.app/"
-          echo "✓ Deployed → https://sop-web-prod.firebaseapp.com/"
