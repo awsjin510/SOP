@@ -1,10 +1,13 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/firebase/config';
+import { getStoredKey } from '@/services/byok-key';
+import { callClaudeBYOK } from '@/services/claude-byok';
 import type { ClaudeRequest, ClaudeResponse } from '@/core/types/extractor';
 
 /**
- * 前端不直接呼叫 Anthropic — 只透過 Cloud Function 'claudeProxy'。
- * API key 永遠在後端。
+ * 雙模式 Claude 呼叫：
+ * - 若使用者在設定頁存了自己的 API key（BYOK），直接從瀏覽器呼叫 Anthropic
+ * - 否則走 Cloud Function `claudeProxy`（需後端 ANTHROPIC_API_KEY secret）
  */
 const claudeProxyFn = httpsCallable<ClaudeRequest, ClaudeResponse>(
   functions,
@@ -12,6 +15,10 @@ const claudeProxyFn = httpsCallable<ClaudeRequest, ClaudeResponse>(
 );
 
 export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
+  const byokKey = getStoredKey();
+  if (byokKey) {
+    return callClaudeBYOK(req, byokKey);
+  }
   const result = await claudeProxyFn(req);
   return result.data;
 }
