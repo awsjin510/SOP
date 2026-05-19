@@ -23,9 +23,29 @@ const router = useRouter();
 const jobStore = useCurrentJobStore();
 const sopStore = useSopStore();
 
+const DEFAULT_SOP_PROMPT = `請依序說明這份 SOP：
+
+▌主題 / 目的（這份流程是做什麼的、要解決什麼問題）
+
+
+▌適用對象與情境（誰會使用、什麼時候使用）
+
+
+▌主要操作步驟（依順序列出，越詳細越好）
+1.
+2.
+3.
+
+
+▌注意事項 / 常見問題 / 故障排除
+
+
+▌相關工具、系統或文件
+`;
+
 const title = ref('');
 const files = ref<File[]>([]);
-const pastedText = ref('');
+const pastedText = ref(DEFAULT_SOP_PROMPT);
 const error = ref<string | null>(null);
 
 const byokReady = computed(() => hasStoredKey());
