@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, markRaw } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   Upload,
@@ -14,7 +14,7 @@ import {
   Zap,
   Type,
   FileText,
-  Image,
+  Image as ImageIcon,
   Mic,
   ListChecks,
   Bell,
@@ -35,12 +35,12 @@ async function goSettings(): Promise<void> {
 }
 
 const sourceTypes = [
-  { icon: Type, label: '直接輸入文字' },
-  { icon: FileText, label: 'Word / PDF' },
-  { icon: Image, label: '操作截圖' },
-  { icon: Mic, label: '會議逐字稿' },
-  { icon: ListChecks, label: '修改清單' },
-  { icon: Bell, label: 'Release Note' },
+  { icon: markRaw(Type), label: '直接輸入文字' },
+  { icon: markRaw(FileText), label: 'Word / PDF' },
+  { icon: markRaw(ImageIcon), label: '操作截圖' },
+  { icon: markRaw(Mic), label: '會議逐字稿' },
+  { icon: markRaw(ListChecks), label: '修改清單' },
+  { icon: markRaw(Bell), label: 'Release Note' },
 ];
 
 const formats = [
