@@ -146,7 +146,7 @@ export async function renderDocx(
       spacing: { before: 2400, after: 240 },
       children: [
         new TextRun({
-          text: 'CloudOrange · 雲力橘子',
+          text: 'CloudForce · 雲力',
           size: 24,
           color: COLORS.ACCENT,
           font: FONT_HEADING,
@@ -313,7 +313,7 @@ export async function renderDocx(
   // ---------- assemble ----------
 
   const doc = new Document({
-    creator: 'CloudOrange · 雲力橘子',
+    creator: 'CloudForce · 雲力',
     title: ir.meta.title,
     styles: {
       default: {

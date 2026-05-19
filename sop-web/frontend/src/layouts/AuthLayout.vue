@@ -8,7 +8,7 @@
       <slot />
     </main>
     <footer class="text-center text-xs text-gray-400 py-6 border-t border-gray-100 bg-white">
-      © 2026 CloudOrange · 雲力橘子 ·
+      © 2026 CloudForce · 雲力 ·
       <a
         href="https://github.com/awsjin510/SOP"
         target="_blank"

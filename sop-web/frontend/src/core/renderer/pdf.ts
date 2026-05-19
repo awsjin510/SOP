@@ -74,7 +74,7 @@ export async function renderPdf(
 
   const doc = await PDFDocument.create();
   doc.setTitle(ir.meta.title);
-  doc.setAuthor('CloudOrange · 雲力橘子');
+  doc.setAuthor('CloudForce · 雲力');
   doc.setCreator('SOP Web');
   doc.registerFontkit(fontkit);
 
@@ -233,7 +233,7 @@ export async function renderPdf(
   // ---------- cover ----------
 
   y -= 200;
-  drawWrapped('CloudOrange · 雲力橘子', {
+  drawWrapped('CloudForce · 雲力', {
     size: 12,
     color: color(RGB.ACCENT),
     bottomMargin: 20,
