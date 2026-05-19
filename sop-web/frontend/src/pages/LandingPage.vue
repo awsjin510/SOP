@@ -81,11 +81,14 @@ const formats = [
             AI 內訓文件產生器 · 純前端 · BYOK
           </div>
 
-          <h1 class="text-4xl sm:text-5xl lg:text-[3.5rem] font-bold tracking-tight mb-6 leading-[1.1]">
-            把<span class="text-accent-200">訪談</span>變成
+          <h1 class="text-4xl sm:text-5xl lg:text-[3.5rem] font-bold tracking-tight mb-3 leading-[1.1]">
+            把<span class="text-accent-200">零散素材</span>，
             <br class="hidden sm:block" />
-            標準作業<span class="text-accent-200">流程</span>
+            變成<span class="text-accent-200">標準作業流程</span>
           </h1>
+          <p class="text-lg sm:text-xl font-medium text-accent-200 mb-6">
+            把口頭經驗，變成可傳承的 SOP
+          </p>
 
           <p class="text-base sm:text-lg text-primary-100 max-w-2xl mb-8 leading-relaxed">
             上傳訪談稿、文件、截圖，AI 自動抽取成結構化 SOP，
