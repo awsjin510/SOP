@@ -23,24 +23,15 @@ const router = useRouter();
 const jobStore = useCurrentJobStore();
 const sopStore = useSopStore();
 
-const DEFAULT_SOP_PROMPT = `請依序說明這份 SOP：
+const DEFAULT_SOP_PROMPT = `協助我把零散的素材與口頭經驗，整理成一份標準作業流程（SOP）。
 
-▌主題 / 目的（這份流程是做什麼的、要解決什麼問題）
+請依以下步驟進行：
+1. 我會提供素材（文字、筆記、對話、截圖等）
+2. 你協助我釐清流程的「目的、輸入、步驟、輸出、檢核點」
+3. 產出結構化 SOP 文件
+4. 標註模糊或需補充的環節，向我提問確認
 
-
-▌適用對象與情境（誰會使用、什麼時候使用）
-
-
-▌主要操作步驟（依順序列出，越詳細越好）
-1.
-2.
-3.
-
-
-▌注意事項 / 常見問題 / 故障排除
-
-
-▌相關工具、系統或文件
+語氣專業、條列清晰、繁體中文。
 `;
 
 const title = ref('');
